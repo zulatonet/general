@@ -201,7 +201,9 @@ limite_senha_admin = LimiteTaxa(5, 900)                  # tentativas de senha d
 limite_senha_sala = LimiteTaxa(5, 900)                   # tentativas de senha de sala por usuário
 limite_solicitacao = LimiteTaxa(1, 600)                  # 1 pedido por sala a cada 10 min
 detector_flood = LimiteTaxa(FLOOD_MAX_MSGS, FLOOD_JANELA)  # mensagens por usuário
-LIMITES = (limite_login, limite_acoes, limite_senha_admin, limite_senha_sala, limite_solicitacao, detector_flood)
+limite_teste_push = LimiteTaxa(5, 300)                   # testes de notificação por usuário
+LIMITES = (limite_login, limite_acoes, limite_senha_admin, limite_senha_sala, limite_solicitacao, detector_flood,
+           limite_teste_push)
 
 
 def ip_cliente(request):
@@ -330,12 +332,35 @@ def _agendar_push(consulta, titulo, corpo, chave, filtro=None):
 
 
 async def _enviar_push(inscricao, dados):
+    """Envia e devolve (ok, detalhe) — usado também pelo teste de notificações."""
+    servico = urlparse(inscricao["endpoint"]).netloc
     try:
-        await webpush.enviar(sessao_push, vapid, inscricao, dados)
+        status = await webpush.enviar(sessao_push, vapid, inscricao, dados)
+        log.info("push entregue ao serviço %s (HTTP %s)", servico, status)
+        return True, f"aceito pelo serviço de push ({servico}, HTTP {status})"
     except webpush.InscricaoExpirada:
         await db.apagar_inscricao(inscricao["endpoint"])
+        log.info("push: inscrição expirada removida (%s)", servico)
+        return False, f"inscrição expirada no {servico} — ative as notificações de novo"
     except Exception as erro:
-        log.warning("push falhou (%s): %s", urlparse(inscricao["endpoint"]).netloc, erro)
+        log.warning("push falhou (%s): %s", servico, erro)
+        return False, f"{servico}: {erro}"
+
+
+async def testar_push(usuario_id, atraso):
+    """Manda um push de teste para todos os aparelhos do usuário, ignorando se a tela está aberta."""
+    inscricoes = await db.inscricoes_de([usuario_id])
+    if not inscricoes:
+        await enviar_para_usuario(usuario_id, {"tipo": "push_teste", "aparelhos": 0, "resultados": []})
+        return
+    if atraso:
+        await asyncio.sleep(atraso)
+    dados = {"titulo": "🔔 Teste do SalaVip", "corpo": "Se você está vendo isto, as notificações funcionam!", "chave": "teste"}
+    resultados = await asyncio.gather(*[_enviar_push(i, dados) for i in inscricoes])
+    await enviar_para_usuario(usuario_id, {
+        "tipo": "push_teste", "aparelhos": len(inscricoes),
+        "resultados": [{"ok": ok, "detalhe": detalhe} for ok, detalhe in resultados],
+    })
 
 
 def endpoint_valido(endpoint):
@@ -624,6 +649,11 @@ async def tratar_mensagem(ws, usuario_id, dados):
         (info["visiveis"].add if dados.get("visivel") else info["visiveis"].discard)(ws)
         return
 
+    if tipo == "estado_push":
+        await enviar(ws, {"tipo": "estado_push", "aparelhos": len(await db.inscricoes_de([usuario_id])),
+                          "servidor_ok": vapid is not None})
+        return
+
     if not limite_acoes.permitir(usuario_id):
         await enviar(ws, {"tipo": "erro", "mensagem": "Devagar! Você está fazendo coisas rápido demais."})
         return
@@ -634,6 +664,16 @@ async def tratar_mensagem(ws, usuario_id, dados):
             alvo = await db.buscar_usuario_por_apelido(interlocutor)
             if alvo:
                 await db.marcar_como_lidas(usuario_id, alvo["id"])
+        return
+
+    if tipo == "testar_push":
+        if not limite_teste_push.permitir(usuario_id):
+            await enviar(ws, {"tipo": "erro", "mensagem": "Aguarde um pouco antes de testar de novo."})
+            return
+        atraso = dados.get("atraso") if isinstance(dados.get("atraso"), int) else 0
+        tarefa = asyncio.create_task(testar_push(usuario_id, max(0, min(atraso, 30))))
+        tarefas_push.add(tarefa)
+        tarefa.add_done_callback(tarefas_push.discard)
         return
 
     if tipo == "fixar":

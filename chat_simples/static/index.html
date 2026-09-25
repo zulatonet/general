@@ -127,6 +127,16 @@ button { font-family: inherit; }
 .modal .erro { color: #ff6b6b; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
 .modal .info { color: #8c8; font-size: 13px; min-height: 18px; margin-top: 10px; }
 .modal .ou { color: #667; font-size: 12px; margin: 14px 0; }
+#rodape-lateral { padding: 8px; border-top: 1px solid #222; flex-shrink: 0; }
+#rodape-lateral button { width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #333; background: #1e1e2f; color: #cce; font-size: 13px; cursor: pointer; }
+#modal-notif .caixa { text-align: left; max-height: 90vh; overflow-y: auto; }
+#modal-notif h2 { text-align: center; }
+#modal-notif button { margin-top: 8px; }
+#notif-estado { font-size: 14px; line-height: 1.7; margin: 10px 0; }
+#notif-resultado { white-space: pre-wrap; text-align: left; }
+#modal-notif details { margin-top: 14px; font-size: 13px; color: #bbc; }
+#modal-notif summary { cursor: pointer; color: #ccf; font-weight: bold; }
+#modal-notif ol { padding-left: 18px; line-height: 1.5; }
 .escondido { display: none !important; }
 
 /* Celular: barra lateral vira menu deslizante */
@@ -183,6 +193,29 @@ button { font-family: inherit; }
   </div>
 </div>
 
+<div id="modal-notif" class="modal escondido">
+  <div class="caixa">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2>🔔 Notificações</h2>
+    <div id="notif-estado">Verificando...</div>
+    <button class="principal" id="notif-ativar">Ativar notificações neste aparelho</button>
+    <button class="secundario" id="notif-testar">Testar agora</button>
+    <button class="secundario" id="notif-testar-atraso">Testar em 15 s (feche o app para ver)</button>
+    <div class="info" id="notif-resultado"></div>
+    <details>
+      <summary>Não chegou? Veja o que liberar no Android</summary>
+      <ol>
+        <li><b>Notificações do app:</b> Configurações → Apps → <b>Chrome</b> (e também <b>SalaVip</b>, se instalou) → Notificações → permitir tudo, inclusive a categoria do site.</li>
+        <li><b>Bateria:</b> Configurações → Apps → Chrome → Bateria → <b>Sem restrições</b>. Faça o mesmo no app SalaVip.</li>
+        <li><b>No Chrome:</b> ⋮ → Configurações → Configurações do site → Notificações → <b>chat.salavip.live</b> permitido.</li>
+        <li><b>Xiaomi, Samsung, Motorola etc.:</b> ative “Início automático” / “Atividade em segundo plano” para o Chrome. Não use “Forçar parada”.</li>
+        <li>Confira se o <b>Não perturbe</b> está desligado.</li>
+      </ol>
+      O SalaVip usa o mesmo serviço de push do Google que o WhatsApp: com isso liberado, a notificação chega com o app fechado.
+    </details>
+  </div>
+</div>
+
 <div id="topo">
   <div id="topo-esq">
     <button id="menu" aria-label="Conversas">☰<span class="ponto escondido" id="menu-ponto"></span></button>
@@ -201,6 +234,7 @@ button { font-family: inherit; }
   <div id="sidebar">
     <div id="busca-caixa"><input id="busca" placeholder="🔍 Buscar pessoas e salas" autocomplete="off"></div>
     <div id="lista"></div>
+    <div id="rodape-lateral"><button id="abrir-notif">🔔 Notificações</button></div>
   </div>
   <div id="chat">
     <div id="chat-titulo">
@@ -393,6 +427,15 @@ const TRATADORES = {
     const alvo = !el("modal-criar").classList.contains("escondido") ? "criar-erro" : !el("modal-sala").classList.contains("escondido") ? "sala-erro" : null;
     if (alvo) el(alvo).textContent = d.mensagem; else adicionarSistema(d.mensagem);
   },
+  estado_push(d) { aparelhosNoServidor = d.aparelhos; atualizarPainelNotif(); },
+  push_teste(d) {
+    const linhas = d.aparelhos === 0
+      ? ["❌ O servidor não tem nenhum aparelho seu cadastrado. Toque em “Ativar notificações neste aparelho”."]
+      : d.resultados.map(r => (r.ok ? "✅ " : "❌ ") + r.detalhe);
+    if (d.aparelhos && d.resultados.some(r => r.ok)) linhas.push("\nSe o serviço aceitou e mesmo assim nada apareceu, o bloqueio está no Android: veja as dicas abaixo.");
+    el("notif-resultado").textContent = "Teste pelo servidor (" + d.aparelhos + " aparelho(s)):\n" + linhas.join("\n");
+    enviarWs({ tipo: "estado_push" });
+  },
   solicitacao_enviada(d) {
     el("sala-erro").textContent = "";
     el("sala-info").textContent = "📩 Pedido enviado para " + d.dono + ". Você entra assim que for aceito.";
@@ -476,6 +519,7 @@ el("sair").onclick = async () => {
 function fecharModais() {
   el("modal-criar").classList.add("escondido");
   el("modal-sala").classList.add("escondido");
+  el("modal-notif").classList.add("escondido");
   salaModal = null;
 }
 document.querySelectorAll("[data-fechar]").forEach(b => b.onclick = fecharModais);
@@ -888,11 +932,14 @@ function chaveParaBytes(b64) {
   return Uint8Array.from(bruto, c => c.charCodeAt(0));
 }
 
+let ultimoErroPush = "";
+let aparelhosNoServidor = null;
+
 async function inscreverPush() {
   try {
     const reg = await navigator.serviceWorker.ready;
     const { chave } = await (await fetch("/api/push/chave")).json();
-    if (!chave) return;
+    if (!chave) throw new Error("servidor sem chave de push");
     const chaveBytes = chaveParaBytes(chave);
     let inscricao = await reg.pushManager.getSubscription();
     // Se o servidor trocou de chave, refaz a inscrição.
@@ -902,15 +949,106 @@ async function inscreverPush() {
       inscricao = null;
     }
     if (!inscricao) inscricao = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chaveBytes });
-    await fetch("/api/push/inscrever", {
+    const resp = await fetch("/api/push/inscrever", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(inscricao.toJSON()),
     });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).erro || "HTTP " + resp.status);
+    ultimoErroPush = "";
+    enviarWs({ tipo: "estado_push" });
+    return true;
   } catch (e) {
+    ultimoErroPush = String(e && e.message || e);
     console.warn("push indisponível:", e);
+    return false;
   }
 }
+
+// ---------------------------------------------------------------
+// Painel de notificações (estado + teste)
+// ---------------------------------------------------------------
+async function atualizarPainelNotif() {
+  if (el("modal-notif").classList.contains("escondido")) return;
+  const linhas = [];
+  let inscrito = false, servico = "";
+  if (!pushSuportado) {
+    linhas.push(ehIOS && !instalado
+      ? "❌ No iPhone, notificações só funcionam com o app na Tela de Início (Safari → Compartilhar → Adicionar à Tela de Início)."
+      : "❌ Este navegador não suporta notificações. Use o Chrome.");
+  } else {
+    const perm = Notification.permission;
+    linhas.push(perm === "granted" ? "✅ Permissão do navegador: permitida"
+      : perm === "denied" ? "❌ Permissão do navegador: bloqueada — libere nas configurações do site (veja as dicas)"
+      : "⚠️ Permissão do navegador: ainda não pedida");
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      linhas.push(reg?.active ? "✅ Serviço de notificações do app: ativo" : "❌ Serviço de notificações do app: não carregou (recarregue a página)");
+      const sub = reg && await reg.pushManager.getSubscription();
+      inscrito = !!sub;
+      if (sub) servico = new URL(sub.endpoint).host;
+    } catch (e) {}
+    linhas.push(inscrito ? "✅ Este aparelho está inscrito (" + servico + ")" : "❌ Este aparelho não está inscrito");
+  }
+  if (aparelhosNoServidor !== null) {
+    linhas.push((aparelhosNoServidor ? "✅ " : "❌ ") + "Aparelhos com notificação na sua conta: " + aparelhosNoServidor);
+  }
+  linhas.push(instalado ? "📲 Aberto como app instalado" : "🌐 Aberto no navegador");
+  if (ultimoErroPush) {
+    linhas.push("⚠️ Último erro: " + ultimoErroPush);
+    if (/permission denied|not allowed|denied/i.test(ultimoErroPush)) {
+      linhas.push("👉 O Android está bloqueando as notificações do Chrome. Vá em Configurações → Apps → Chrome → Notificações → Permitir (e o mesmo no app SalaVip, se instalou). Depois toque em “Ativar” de novo.");
+    }
+  }
+  el("notif-estado").textContent = linhas.join("\n");
+  el("notif-estado").style.whiteSpace = "pre-wrap";
+  el("notif-ativar").classList.toggle("escondido", !pushSuportado || (inscrito && Notification.permission === "granted" && aparelhosNoServidor > 0));
+}
+
+function abrirPainelNotif() {
+  el("notif-resultado").textContent = "";
+  el("modal-notif").classList.remove("escondido");
+  abrirMenu(false);
+  enviarWs({ tipo: "estado_push" });
+  atualizarPainelNotif();
+}
+el("abrir-notif").onclick = abrirPainelNotif;
+
+el("notif-ativar").onclick = async () => {
+  if (!pushSuportado) return;
+  const permissao = await Notification.requestPermission();
+  if (permissao !== "granted") {
+    el("notif-resultado").textContent = permissao === "denied"
+      ? "❌ Notificações bloqueadas. Libere nas configurações do navegador/Android (veja as dicas)."
+      : "Você não respondeu ao pedido de permissão.";
+  } else {
+    el("notif-resultado").textContent = (await inscreverPush()) ? "✅ Notificações ativadas neste aparelho." : "❌ Não consegui ativar: " + ultimoErroPush;
+  }
+  atualizarAviso();
+  atualizarPainelNotif();
+};
+
+async function testarNotificacao(atraso) {
+  const linhas = [];
+  if (pushSuportado && Notification.permission === "granted" && !atraso) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification("🔔 Teste local do SalaVip", {
+        body: "Esta foi criada pelo próprio aparelho.", tag: "teste-local",
+        icon: "/icones/icone-192.png", badge: "/icones/badge-96.png",
+      });
+      linhas.push("✅ Teste local enviado (deve aparecer uma notificação agora).");
+    } catch (e) {
+      linhas.push("❌ O aparelho não deixou mostrar notificação: " + e.message);
+    }
+  }
+  linhas.push(atraso ? "⏳ Em " + atraso + " s o servidor manda o teste. Feche o app ou bloqueie a tela agora."
+    : "⏳ Pedindo ao servidor para enviar um push...");
+  el("notif-resultado").textContent = linhas.join("\n");
+  enviarWs({ tipo: "testar_push", atraso });
+}
+el("notif-testar").onclick = () => testarNotificacao(0);
+el("notif-testar-atraso").onclick = () => testarNotificacao(15);
 
 async function cancelarPush() {
   try {

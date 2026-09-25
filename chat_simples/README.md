@@ -131,6 +131,13 @@ Graph com o nome, a descrição e a imagem `static/icones/og-image.jpg`
 funcionam em qualquer domínio apontado para o serviço. O WhatsApp guarda a
 prévia em cache: se ela mudar, a nova pode levar um tempo para aparecer.
 
+**Diagnóstico:** na barra lateral, **🔔 Notificações** abre um painel que
+mostra a permissão do navegador, se o aparelho está inscrito, quantos
+aparelhos a conta tem cadastrados e o último erro. Tem os botões **Testar
+agora** (notificação local e push pelo servidor, com a resposta do serviço
+de push) e **Testar em 15 s**, para fechar o app e ver se chega com ele
+fechado. Cada envio também aparece no log (`push entregue ao serviço ...`).
+
 **Como funciona:** o servidor manda o push para o serviço do navegador
 (Google, Mozilla ou Apple), que entrega no aparelho. O conteúdo vai
 criptografado de ponta a ponta (RFC 8291) e o servidor se identifica com

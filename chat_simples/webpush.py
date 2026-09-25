@@ -117,3 +117,4 @@ async def enviar(sessao: aiohttp.ClientSession, vapid: Vapid, inscricao: dict, d
             raise InscricaoExpirada()
         if resp.status >= 400:
             raise RuntimeError(f"push recusado: HTTP {resp.status} {(await resp.text())[:200]}")
+        return resp.status
