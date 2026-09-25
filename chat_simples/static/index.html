@@ -362,6 +362,10 @@ function conectar() {
       return;
     }
     if (!ws) return;  // saída manual
+    if (event.code === 4002) {
+      adicionarSistema("⚠️ Você está com o chat aberto em muitas abas/aparelhos. Feche alguns e aguarde.");
+      tentativas = Math.max(tentativas, 4);
+    }
     tentativas++;
     const espera = Math.min(30000, 1000 * 2 ** Math.min(tentativas, 5));
     definirStatus("conectando", "Reconectando...");

@@ -8,6 +8,8 @@ Tipos de mensagem (tabela `mensagens`):
 - Privada:      destinatario_id preenchido — expira (PRIVATE_TTL_HOURS).
 - Sala:         sala_id preenchido — expira (PRIVATE_TTL_HOURS).
 """
+from urllib.parse import urlparse
+
 import asyncpg
 
 pool: asyncpg.Pool | None = None
@@ -131,11 +133,25 @@ ALTER TABLE push_inscricoes ENABLE ROW LEVEL SECURITY;
 FILTRO_VALIDADE = "(m.enviado_em > now() - make_interval(hours => {p}))"
 
 
+def _ssl_para(dsn):
+    """Exige conexão criptografada com bancos externos (ex.: Supabase).
+
+    Respeita `sslmode` se vier na DATABASE_URL. Bancos locais ou na rede interna
+    do Easypanel (host sem ponto, ex.: "salavip_db") ficam como estão.
+    """
+    if "sslmode=" in dsn:
+        return None
+    host = (urlparse(dsn).hostname or "").lower()
+    if not host or host in ("localhost", "127.0.0.1", "::1") or "." not in host:
+        return None
+    return "require"
+
+
 async def conectar(dsn):
     global pool
     # statement_cache_size=0: compatível com poolers em modo transação
     # (ex.: Supabase na porta 6543 / PgBouncer).
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5, statement_cache_size=0)
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5, statement_cache_size=0, ssl=_ssl_para(dsn))
     async with pool.acquire() as conn:
         await conn.execute(SCHEMA)
 

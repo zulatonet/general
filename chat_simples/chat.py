@@ -34,6 +34,9 @@ VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:admin@example.com")
 # Só enviamos push para os serviços oficiais dos navegadores (evita SSRF).
 SERVICOS_PUSH = ("fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com")
+# Atrás do Cloudflare, use TRUSTED_IP_HEADER=CF-Connecting-IP para ler o IP real do visitante.
+TRUSTED_IP_HEADER = os.environ.get("TRUSTED_IP_HEADER", "").strip()
+MAX_CONEXOES_POR_USUARIO = 5
 NOME_COOKIE = "chat_sessao"
 
 MAX_APELIDO = 20
@@ -45,7 +48,9 @@ MAX_SALAS_POR_USUARIO = 5
 MAX_AUDIO_MS = 10_000
 MAX_AUDIO_BYTES = 200 * 1024
 MIME_AUDIO = re.compile(r"^audio/[a-z0-9.+-]+(;\s*codecs=[\"']?[a-z0-9.,+ -]+[\"']?)?$", re.I)
-APELIDO_VALIDO = re.compile(r"^[\w.-]{2,%d}$" % MAX_APELIDO)
+# Só letras latinas (com acentos), números, ponto, hífen e _: bloqueia nomes "clonados" com
+# letras de outros alfabetos (ex.: "Аndre" com A cirílico imitando "Andre").
+APELIDO_VALIDO = re.compile(r"^[A-Za-z0-9À-ÖØ-öø-ÿ_.-]{2,%d}$" % MAX_APELIDO)
 
 # Anti-flood: mais de FLOOD_MAX_MSGS mensagens em FLOOD_JANELA segundos = 1 aviso.
 # Cada aviso trava o envio por FLOOD_TRAVA_MIN minuto(s); passou de FLOOD_AVISOS
@@ -148,9 +153,18 @@ def _scrypt(senha, salt):
     return hashlib.scrypt(senha.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
 
 
+# No máximo 4 hashes ao mesmo tempo (~64 MB): muitos logins juntos não derrubam o servidor.
+semaforo_scrypt = asyncio.Semaphore(4)
+
+
+async def _scrypt_limitado(senha, salt):
+    async with semaforo_scrypt:
+        return await asyncio.to_thread(_scrypt, senha, salt)
+
+
 async def gerar_hash_senha(senha):
     salt = secrets.token_bytes(16)
-    h = await asyncio.to_thread(_scrypt, senha, salt)
+    h = await _scrypt_limitado(senha, salt)
     return f"scrypt${salt.hex()}${h.hex()}"
 
 
@@ -159,7 +173,7 @@ async def conferir_senha(senha, senha_hash):
         _, salt, esperado = senha_hash.split("$")
     except ValueError:
         return False
-    h = await asyncio.to_thread(_scrypt, senha, bytes.fromhex(salt))
+    h = await _scrypt_limitado(senha, bytes.fromhex(salt))
     return hmac.compare_digest(h.hex(), esperado)
 
 
@@ -169,6 +183,25 @@ def hash_token(token):
 
 def senha_admin_correta(tentativa):
     return bool(SENHA_ADMIN) and hmac.compare_digest(tentativa.encode(), SENHA_ADMIN.encode())
+
+
+def conferir_senha_admin(usuario_id, tentativa):
+    """Confere a senha de admin com proteção contra força bruta.
+
+    Limite por usuário (5 / 15 min) e, no chat todo, 20 erros por hora: passou
+    disso, a senha de admin para de funcionar por 1 h para todo mundo (o
+    atacante não ganha nada criando várias contas). Erros vão para o log.
+    """
+    if falhas_admin_global.excedido("admin") or not limite_senha_admin.permitir(usuario_id):
+        return False
+    if senha_admin_correta(tentativa):
+        return True
+    falhas_admin_global.registrar("admin")
+    info = conexoes.get(usuario_id, {})
+    log.warning("senha de admin errada: %s (IP %s)", info.get("apelido"), info.get("ip"))
+    if falhas_admin_global.excedido("admin"):
+        log.warning("ALERTA: muitas senhas de admin erradas; comandos /admin SENHA bloqueados por 1 hora")
+    return False
 
 
 class LimiteTaxa:
@@ -189,6 +222,17 @@ class LimiteTaxa:
         fila.append(agora)
         return True
 
+    def excedido(self, chave):
+        """Já atingiu o limite? (não conta um novo evento)"""
+        agora = time.monotonic()
+        fila = self.eventos.get(chave)
+        while fila and agora - fila[0] > self.janela:
+            fila.popleft()
+        return bool(fila) and len(fila) >= self.maximo
+
+    def registrar(self, chave):
+        self.eventos[chave].append(time.monotonic())
+
     def zerar(self, chave):
         self.eventos.pop(chave, None)
 
@@ -205,11 +249,22 @@ limite_senha_sala = LimiteTaxa(5, 900)                   # tentativas de senha d
 limite_solicitacao = LimiteTaxa(1, 600)                  # 1 pedido por sala a cada 10 min
 detector_flood = LimiteTaxa(FLOOD_MAX_MSGS, FLOOD_JANELA)  # mensagens por usuário
 limite_teste_push = LimiteTaxa(5, 300)                   # testes de notificação por usuário
+limite_ip = LimiteTaxa(120, 60)                          # requisições à API/WebSocket por IP
+limite_ws_ip = LimiteTaxa(20, 60)                        # conexões WebSocket novas por IP
+limite_cadastro = LimiteTaxa(3, 3600)                    # contas novas por IP
+falhas_login_conta = LimiteTaxa(20, 900)                 # senhas erradas por conta (contra botnet)
+falhas_admin_global = LimiteTaxa(20, 3600)               # senhas de admin erradas no chat todo
+falhas_sala = LimiteTaxa(30, 3600)                       # senhas erradas por sala
+limite_audio_ouvir = LimiteTaxa(60, 60)                  # downloads de áudio por usuário
 LIMITES = (limite_login, limite_acoes, limite_senha_admin, limite_senha_sala, limite_solicitacao, detector_flood,
-           limite_teste_push)
+           limite_teste_push, limite_ip, limite_ws_ip, limite_cadastro, falhas_login_conta, falhas_admin_global,
+           falhas_sala, limite_audio_ouvir)
 
 
 def ip_cliente(request):
+    # Atrás do Cloudflare: cabeçalho configurado (ex.: CF-Connecting-IP).
+    if TRUSTED_IP_HEADER and request.headers.get(TRUSTED_IP_HEADER):
+        return request.headers[TRUSTED_IP_HEADER].strip()
     # Atrás do proxy do Easypanel (Traefik), o IP real é o último do X-Forwarded-For.
     xff = request.headers.get("X-Forwarded-For")
     if xff:
@@ -416,11 +471,27 @@ async def colocar_na_sala(sala, usuario_id, apelido):
 # HTTP
 # ---------------------------------------------------------------
 @web.middleware
+async def limite_por_ip(request, handler):
+    """Freia quem martela a API/WebSocket (cada chamada pode consultar o banco)."""
+    caminho = request.path
+    if caminho.startswith("/api/") or caminho in ("/ws", "/health"):
+        ip = ip_cliente(request)
+        if not limite_ip.permitir(ip) or (caminho == "/ws" and not limite_ws_ip.permitir(ip)):
+            return web.json_response({"erro": "Muitas requisições. Aguarde um pouco."}, status=429,
+                                     headers={"Retry-After": "60"})
+    return await handler(request)
+
+
+@web.middleware
 async def cabecalhos_seguranca(request, handler):
     resposta = await handler(request)
     resposta.headers.setdefault("X-Content-Type-Options", "nosniff")
     resposta.headers.setdefault("Referrer-Policy", "same-origin")
     resposta.headers.setdefault("X-Frame-Options", "DENY")
+    resposta.headers.setdefault("Permissions-Policy", "microphone=(self), camera=(), geolocation=(), payment=()")
+    resposta.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    if requisicao_https(request):
+        resposta.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resposta
 
 
@@ -434,14 +505,18 @@ def url_base(request):
 
 
 async def pagina(request):
+    nonce = secrets.token_urlsafe(16)
+    html = PAGINA.replace("{{URL_BASE}}", url_base(request)).replace("<script>", f'<script nonce="{nonce}">')
     return web.Response(
-        text=PAGINA.replace("{{URL_BASE}}", url_base(request)),
+        text=html,
         content_type="text/html",
         headers={
             "Cache-Control": "no-cache",
             "Content-Security-Policy": (
-                "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'"
+                f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; "
+                "connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; form-action 'self'; "
+                "frame-ancestors 'none'"
             ),
         },
     )
@@ -497,13 +572,21 @@ async def push_cancelar(request):
     return web.json_response({"ok": True})
 
 
+_saude_cache = {"quando": 0.0, "ok": False}
+
+
 async def saude(request):
-    try:
-        await db.ping()
-    except Exception:
-        log.exception("health: banco indisponível")
+    # Consulta o banco no máximo a cada 5 s, por mais que chamem /health.
+    if time.monotonic() - _saude_cache["quando"] > 5:
+        try:
+            _saude_cache["ok"] = await db.ping()
+        except Exception:
+            log.exception("health: banco indisponível")
+            _saude_cache["ok"] = False
+        _saude_cache["quando"] = time.monotonic()
+    if not _saude_cache["ok"]:
         return web.json_response({"status": "erro"}, status=503)
-    return web.json_response({"status": "ok", "online": len(conexoes)})
+    return web.json_response({"status": "ok"})
 
 
 async def entrar(request):
@@ -523,17 +606,26 @@ async def entrar(request):
         return web.json_response({"erro": erro}, status=400)
 
     criado = False
+    ip = ip_cliente(request)
+    conta = apelido.lower()
+    if falhas_login_conta.excedido(conta):
+        log.warning("login bloqueado: muitas senhas erradas para %s (último IP %s)", apelido, ip)
+        return web.json_response({"erro": "Muitas tentativas erradas para este nome. Tente de novo em 15 minutos."}, status=429)
     usuario = await db.buscar_usuario_por_apelido(apelido)
     if usuario:
         if not await conferir_senha(senha, usuario["senha_hash"]):
+            falhas_login_conta.registrar(conta)
             return web.json_response({"erro": "Senha incorreta para este nome."}, status=401)
+        falhas_login_conta.zerar(conta)
         usuario_id, apelido = usuario["id"], usuario["apelido"]
     else:
+        if not limite_cadastro.permitir(ip):
+            return web.json_response({"erro": "Muitas contas criadas deste endereço. Tente mais tarde."}, status=429)
         usuario_id = await db.criar_usuario(apelido, await gerar_hash_senha(senha))
         if usuario_id is None:  # criado por outra requisição no mesmo instante
             return web.json_response({"erro": "Esse nome acabou de ser registrado. Tente outro."}, status=409)
         criado = True
-        log.info("novo usuário: %s", apelido)
+        log.info("novo usuário: %s (IP %s)", apelido, ip)
 
     token = secrets.token_urlsafe(32)
     await db.criar_sessao(hash_token(token), usuario_id, SESSAO_DIAS)
@@ -572,9 +664,13 @@ async def websocket(request):
         return ws
 
     usuario_id = sessao["id"]
+    if len(conexoes.get(usuario_id, {}).get("sockets", ())) >= MAX_CONEXOES_POR_USUARIO:
+        await ws.close(code=4002, message=b"muitas conexoes")
+        return ws
     primeira_conexao = usuario_id not in conexoes
     info = conexoes.setdefault(usuario_id, {"apelido": sessao["apelido"], "sockets": set()})
     info["apelido"] = sessao["apelido"]
+    info["ip"] = ip_cliente(request)
     info["sockets"].add(ws)
     try:
         await db.atualizar_ultimo_acesso(usuario_id)
@@ -661,13 +757,13 @@ async def tratar_mensagem(ws, usuario_id, dados):
     if tipo == "visibilidade":  # enviado por versões antigas da página; não é mais usado
         return
 
+    if not limite_acoes.permitir(usuario_id):
+        await enviar(ws, {"tipo": "erro", "mensagem": "Devagar! Você está fazendo coisas rápido demais."})
+        return
+
     if tipo == "estado_push":
         await enviar(ws, {"tipo": "estado_push", "aparelhos": len(await db.inscricoes_de([usuario_id])),
                           "servidor_ok": vapid is not None})
-        return
-
-    if not limite_acoes.permitir(usuario_id):
-        await enviar(ws, {"tipo": "erro", "mensagem": "Devagar! Você está fazendo coisas rápido demais."})
         return
 
     if tipo == "marcar_lidas":
@@ -845,6 +941,8 @@ async def audio_ouvir(request):
     sessao = await usuario_da_requisicao(request)
     if not sessao:
         return web.json_response({"erro": "Não autenticado."}, status=401)
+    if not limite_audio_ouvir.permitir(sessao["id"]):
+        return web.json_response({"erro": "Muitos áudios seguidos. Aguarde um pouco."}, status=429)
     audio_id = request.match_info["id"]
     info = await db.info_audio(audio_id)
     if not info:
@@ -899,10 +997,11 @@ async def entrar_sala_com_senha(ws, usuario_id, nome, senha):
     if await db.eh_membro(sala["id"], usuario_id):
         await enviar(ws, {"tipo": "erro_sala", "mensagem": "Você já está nessa sala."})
         return
-    if not limite_senha_sala.permitir(usuario_id):
-        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Muitas tentativas. Aguarde alguns minutos."})
+    if falhas_sala.excedido(sala["id"]) or not limite_senha_sala.permitir(usuario_id):
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Muitas tentativas. Aguarde alguns minutos ou peça para entrar."})
         return
-    if not await conferir_senha(senha, sala["senha_hash"]):
+    if len(senha) > MAX_SENHA or not await conferir_senha(senha, sala["senha_hash"]):
+        falhas_sala.registrar(sala["id"])
         await enviar(ws, {"tipo": "erro_sala", "mensagem": "Senha incorreta."})
         return
     await colocar_na_sala(sala, usuario_id, conexoes[usuario_id]["apelido"])
@@ -943,7 +1042,7 @@ async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
     if cmd == "/admin" and len(partes) >= 2 and partes[1].lower() not in ("promover", "revogar", "transferir", "lista"):
         # /admin reset SENHA
         if partes[1].lower() == "reset":
-            if len(partes) < 3 or not limite_senha_admin.permitir(usuario_id) or not senha_admin_correta(partes[2]):
+            if len(partes) < 3 or not conferir_senha_admin(usuario_id, partes[2]):
                 return
             master = await db.buscar_master()
             if not master:
@@ -959,7 +1058,7 @@ async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
             return
 
         # /admin SENHA
-        if not limite_senha_admin.permitir(usuario_id) or not senha_admin_correta(partes[1]):
+        if not conferir_senha_admin(usuario_id, partes[1]):
             return
         if await db.assumir_master_se_vago(usuario_id):
             log.info("%s agora é master", conexoes[usuario_id]["apelido"])
@@ -1244,6 +1343,8 @@ async def ao_iniciar(app):
     await db.apagar_expiradas(TTL_HORAS)
     if not SENHA_ADMIN:
         log.warning("ADMIN_PASSWORD não definida: ninguém conseguirá virar admin")
+    elif len(SENHA_ADMIN) < 12 or SENHA_ADMIN.isdigit():
+        log.warning("ADMIN_PASSWORD fraca: use 12+ caracteres misturando letras, números e símbolos")
 
 
 async def ao_encerrar(app):
@@ -1258,7 +1359,7 @@ async def ao_encerrar(app):
 
 
 def criar_app():
-    app = web.Application(middlewares=[cabecalhos_seguranca], client_max_size=MAX_AUDIO_BYTES + 16 * 1024)
+    app = web.Application(middlewares=[limite_por_ip, cabecalhos_seguranca], client_max_size=MAX_AUDIO_BYTES + 16 * 1024)
     app.router.add_get("/", pagina)
     app.router.add_get("/health", saude)
     app.router.add_get("/sw.js", service_worker)

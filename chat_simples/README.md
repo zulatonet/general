@@ -44,6 +44,7 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `TIMEZONE` | não | `America/Sao_Paulo` | Fuso usado para contar os avisos de flood "do dia" |
 | `VAPID_PRIVATE_KEY` | não | gerada | Chave do push. Se vazia, o chat gera uma e guarda no banco (tabela `config`) |
 | `VAPID_SUBJECT` | não | `mailto:admin@example.com` | Contato enviado aos serviços de push. Use um e-mail seu (`mailto:...`) |
+| `TRUSTED_IP_HEADER` | não | vazio | Cabeçalho com o IP real do visitante quando há proxy na frente. Com Cloudflare: `CF-Connecting-IP` |
 | `LOG_LEVEL` | não | `INFO` | Nível de log (saída no stdout) |
 
 Veja `.env.example`.
@@ -242,19 +243,52 @@ comandos que a pessoa pode usar.
 > Ao atualizar de uma versão anterior, o admin existente vira Master
 > automaticamente.
 
-## Proteções
+## Segurança
 
-- Mensagens ligadas ao **ID** do usuário, e não ao apelido: ninguém herda
-  conversas de outra pessoa.
-- Rate limiting: 10 logins / 5 min por IP; 20 ações / 10 s por usuário;
-  5 tentativas de senha de admin ou de sala / 15 min por usuário; 1 pedido de
-  entrada por sala a cada 10 min.
-- Anti-flood com avisos e travas (ver "Regras do chat").
+### Contra força bruta
+| Alvo | Proteção |
+|---|---|
+| Senha de uma conta | 10 tentativas / 5 min por IP **e** 20 senhas erradas / 15 min por conta (segura botnet com muitos IPs) |
+| Senha de admin (`/admin SENHA`) | 5 / 15 min por usuário **e** 20 erros / hora no chat todo: passou disso, a senha de admin para de funcionar por 1 h. Cada erro vai para o log com nome e IP |
+| Senha de sala | 5 / 15 min por usuário e 30 erros / hora por sala |
+| Criação de contas | 3 contas novas / hora por IP |
+
+> Use uma `ADMIN_PASSWORD` forte (12+ caracteres, letras, números e símbolos).
+> O chat avisa no log quando ela é fraca.
+
+### Contra sobrecarga (DoS)
+- 120 chamadas / min por IP na API e no WebSocket, e 20 conexões WebSocket novas / min por IP.
+- No máximo 5 conexões abertas por conta (abas/aparelhos).
+- 20 ações / 10 s por usuário no WebSocket; anti-flood nas mensagens.
+- Mensagem de até 2000 caracteres; frame WebSocket de até 16 KB; áudio de até 200 KB.
+- Hash de senha (scrypt, ~16 MB cada) limitado a 4 ao mesmo tempo.
+- `/health` consulta o banco no máximo a cada 5 s.
+- **DDoS de volume** (milhares de máquinas) não se resolve no código: coloque o
+  domínio atrás do **Cloudflare** (plano grátis, proxy laranja ligado, WebSocket
+  funciona) e cadastre `TRUSTED_IP_HEADER=CF-Connecting-IP` para os limites por
+  IP enxergarem o visitante real e não o Cloudflare.
+
+### Contra injeção e manipulação pelo navegador (DevTools)
+- Toda regra é conferida no servidor (permissões, salas, Mural, flood). Mexer
+  na página não dá poder nenhum.
+- SQL sempre parametrizado; conteúdo de usuário exibido com `textContent`
+  (sem XSS). Testado com `<img onerror>`, `<script>`, `<svg onload>`.
+- CSP com *nonce*: só o script da própria página roda; sem `object`, `base`
+  ou formulários para fora. Mais `X-Frame-Options`, `nosniff`, HSTS,
+  `Permissions-Policy` (só microfone) e `Cross-Origin-Opener-Policy`.
+- Nomes só com letras latinas: impede "clones" como `Аndre` (A cirílico).
+- Tipos de cada campo validados; payloads malformados são ignorados.
+- Checagem de `Origin` no login, na API e no WebSocket (CSRF / sequestro de WebSocket).
+- Áudio: tipo, assinatura do arquivo, tamanho e duração conferidos; nunca é
+  servido como HTML.
+- Push só para os serviços oficiais dos navegadores (sem SSRF).
+
+### Dados
+- Senhas com scrypt; sessões guardadas só como hash; cookie `HttpOnly`,
+  `SameSite=Lax` e `Secure`.
 - RLS ligado em todas as tabelas (bloqueia a API pública do Supabase).
-- Limites: mensagem de até 2000 caracteres; frame WebSocket de até 16 KB.
-- Checagem de `Origin` no login e no WebSocket (bloqueia uso a partir de outros sites).
-- Cabeçalhos de segurança (CSP, `X-Frame-Options`, `nosniff`).
-- Sem SQL injection (consultas parametrizadas) e sem XSS (`textContent`).
+- Conexão criptografada (SSL) obrigatória com bancos externos, como o Supabase.
+- Container roda como usuário sem privilégios.
 
 ## Banco de dados
 
