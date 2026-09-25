@@ -122,6 +122,25 @@ CREATE INDEX IF NOT EXISTS idx_tela_log_pixel ON tela_log (x, y, id DESC);
 CREATE INDEX IF NOT EXISTS idx_tela_log_usuario ON tela_log (usuario_id, criado_em);
 CREATE INDEX IF NOT EXISTS idx_tela_log_data ON tela_log (criado_em);
 
+-- Jogo da tela: cargas (pixels guardados para pintar sem esperar), ranking e convites.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cargas INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS pixels_pintados INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS segundos_online BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_convite TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_ip TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_codigo ON usuarios (codigo_convite) WHERE codigo_convite IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_usuarios_rank_pixels ON usuarios (pixels_pintados DESC);
+CREATE INDEX IF NOT EXISTS idx_usuarios_rank_tempo ON usuarios (segundos_online DESC);
+CREATE TABLE IF NOT EXISTS convites (
+    convidado_id  INTEGER PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+    convidador_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    ip            TEXT,
+    criado_em     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ativado_em    TIMESTAMPTZ,
+    recompensado  BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_convites_convidador ON convites (convidador_id, ativado_em);
+
 -- Configurações geradas pelo próprio chat (ex.: chaves VAPID do push).
 CREATE TABLE IF NOT EXISTS config (
     chave TEXT PRIMARY KEY,
@@ -150,6 +169,7 @@ ALTER TABLE config       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audios       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tela         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tela_log     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE convites     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE push_inscricoes ENABLE ROW LEVEL SECURITY;
 """
 
@@ -695,3 +715,132 @@ async def pixels_para_desfazer(usuario_id, minutos):
 
 async def limpar_log_tela(dias=30):
     await pool.execute("DELETE FROM tela_log WHERE criado_em < now() - make_interval(days => $1)", dias)
+
+
+# ---------------------------------------------------------------
+# Jogo da tela: cargas, ranking e convites
+# ---------------------------------------------------------------
+async def cargas_de(usuario_id):
+    return await pool.fetchval("SELECT cargas FROM usuarios WHERE id = $1", usuario_id) or 0
+
+
+async def gastar_carga(usuario_id):
+    """Gasta 1 carga. Retorna o saldo novo, ou None se não tinha carga."""
+    return await pool.fetchval(
+        "UPDATE usuarios SET cargas = cargas - 1 WHERE id = $1 AND cargas > 0 RETURNING cargas", usuario_id
+    )
+
+
+async def dar_cargas(usuario_id, quantidade):
+    """Soma (ou tira, se negativo) cargas sem deixar o saldo negativo. Retorna o saldo novo."""
+    return await pool.fetchval(
+        "UPDATE usuarios SET cargas = GREATEST(0, cargas + $2) WHERE id = $1 RETURNING cargas", usuario_id, quantidade
+    )
+
+
+async def somar_pixels(contagens):
+    """contagens = {usuario_id: n}. Retorna [(usuario_id, total)] já somado."""
+    if not contagens:
+        return []
+    ids, ns = zip(*contagens.items())
+    rows = await pool.fetch(
+        """UPDATE usuarios u SET pixels_pintados = u.pixels_pintados + c.n
+           FROM unnest($1::int[], $2::int[]) AS c(id, n) WHERE u.id = c.id
+           RETURNING u.id, u.pixels_pintados""",
+        list(ids), list(ns),
+    )
+    return [(r["id"], r["pixels_pintados"]) for r in rows]
+
+
+async def somar_tempo(segundos_por_usuario):
+    if not segundos_por_usuario:
+        return
+    ids, segs = zip(*segundos_por_usuario.items())
+    await pool.execute(
+        """UPDATE usuarios u SET segundos_online = u.segundos_online + c.s
+           FROM unnest($1::int[], $2::bigint[]) AS c(id, s) WHERE u.id = c.id""",
+        list(ids), list(segs),
+    )
+
+
+async def ranking(ordem, limite=20):
+    coluna = "segundos_online" if ordem == "tempo" else "pixels_pintados"
+    return await pool.fetch(
+        f"""SELECT apelido, pixels_pintados, segundos_online FROM usuarios
+            WHERE {coluna} > 0 ORDER BY {coluna} DESC, id LIMIT $1""",
+        limite,
+    )
+
+
+async def posicao_no_ranking(usuario_id, ordem):
+    coluna = "segundos_online" if ordem == "tempo" else "pixels_pintados"
+    return await pool.fetchrow(
+        f"""SELECT u.pixels_pintados, u.segundos_online,
+                   (SELECT COUNT(*) + 1 FROM usuarios o WHERE o.{coluna} > u.{coluna}) AS posicao
+            FROM usuarios u WHERE u.id = $1""",
+        usuario_id,
+    )
+
+
+async def registrar_ip(usuario_id, ip):
+    await pool.execute("UPDATE usuarios SET ultimo_ip = $2 WHERE id = $1", usuario_id, ip)
+
+
+async def codigo_convite(usuario_id, novo_codigo):
+    """Código de convite do usuário (cria com `novo_codigo` se ainda não tiver)."""
+    try:
+        await pool.execute(
+            "UPDATE usuarios SET codigo_convite = $2 WHERE id = $1 AND codigo_convite IS NULL", usuario_id, novo_codigo
+        )
+    except asyncpg.UniqueViolationError:
+        pass  # colisão rara; quem chamou tenta de novo com outro código
+    return await pool.fetchval("SELECT codigo_convite FROM usuarios WHERE id = $1", usuario_id)
+
+
+async def dono_do_convite(codigo):
+    return await pool.fetchrow("SELECT id, apelido FROM usuarios WHERE codigo_convite = $1", codigo)
+
+
+async def registrar_convite(convidado_id, convidador_id, ip, bonus):
+    """Liga a conta nova a quem convidou e dá o bônus de boas-vindas."""
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            "INSERT INTO convites (convidado_id, convidador_id, ip) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            convidado_id, convidador_id, ip,
+        )
+        await conn.execute("UPDATE usuarios SET cargas = cargas + $2 WHERE id = $1", convidado_id, bonus)
+
+
+async def ativar_convite(convidado_id, recompensa, max_por_dia):
+    """Chamado quando o convidado já pintou o mínimo. Ativa o convite uma vez só.
+
+    Só recompensa se o convidado não entrou do mesmo IP de quem convidou e se
+    quem convidou ainda não passou do limite do dia. Retorna (convidador_id,
+    saldo_novo) quando houve recompensa; senão None.
+    """
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            """UPDATE convites c SET ativado_em = now(),
+                 recompensado = (c.ip IS DISTINCT FROM u.ultimo_ip)
+                   AND (SELECT COUNT(*) FROM convites o WHERE o.convidador_id = c.convidador_id
+                        AND o.recompensado AND o.ativado_em > now() - interval '1 day') < $2
+               FROM usuarios u
+               WHERE c.convidado_id = $1 AND c.ativado_em IS NULL AND u.id = c.convidador_id
+               RETURNING c.convidador_id, c.recompensado""",
+            convidado_id, max_por_dia,
+        )
+        if not row or not row["recompensado"]:
+            return None
+        saldo = await conn.fetchval(
+            "UPDATE usuarios SET cargas = cargas + $2 WHERE id = $1 RETURNING cargas", row["convidador_id"], recompensa
+        )
+        return row["convidador_id"], saldo
+
+
+async def resumo_convites(usuario_id):
+    return await pool.fetchrow(
+        """SELECT COUNT(*) FILTER (WHERE recompensado) AS ativos,
+                  COUNT(*) FILTER (WHERE ativado_em IS NULL) AS pendentes
+           FROM convites WHERE convidador_id = $1""",
+        usuario_id,
+    )

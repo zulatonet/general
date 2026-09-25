@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -38,6 +39,15 @@ SERVICOS_PUSH = ("fcm.googleapis.com", "push.services.mozilla.com", "push.apple.
 # Atrás do Cloudflare, use TRUSTED_IP_HEADER=CF-Connecting-IP para ler o IP real do visitante.
 TRUSTED_IP_HEADER = os.environ.get("TRUSTED_IP_HEADER", "").strip()
 MAX_CONEXOES_POR_USUARIO = 5
+
+# Jogo da tela: convites e cargas (pixels guardados para pintar sem esperar)
+BONUS_CONVIDADO = 15        # cargas para quem entra por um convite
+RECOMPENSA_CONVITE = 20     # cargas para quem convidou, quando o convidado joga de verdade
+PIXELS_PARA_ATIVAR = 10     # pixels que o convidado precisa pintar para o convite valer
+MAX_CONVITES_DIA = 10       # convites premiados por dia, por pessoa
+CODIGO_VALIDO = re.compile(r"^[A-Z0-9]{5,12}$")
+ALFABETO_CODIGO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sem 0/O e 1/I, que confundem
+COOKIE_CONVITE = "chat_convite"
 NOME_COOKIE = "chat_sessao"
 
 MAX_APELIDO = 20
@@ -143,6 +153,9 @@ HELP_MASTER = HELP_ADMIN + """
 
 /apagar total
   Apaga todas as mensagens do chat (mantém usuários).
+
+/cargas Usuario N
+  Dá N cargas de pixel para Usuario (use negativo para tirar).
 
 Sem Master (ou para assumir um vago):
 
@@ -263,9 +276,10 @@ falhas_login_conta = LimiteTaxa(20, 900)                 # senhas erradas por co
 falhas_admin_global = LimiteTaxa(20, 3600)               # senhas de admin erradas no chat todo
 falhas_sala = LimiteTaxa(30, 3600)                       # senhas erradas por sala
 limite_audio_ouvir = LimiteTaxa(60, 60)                  # downloads de áudio por usuário
+limite_cargas = LimiteTaxa(4, 1)                         # pixels com carga por segundo (evita robô)
 LIMITES = (limite_login, limite_acoes, limite_senha_admin, limite_senha_sala, limite_solicitacao, detector_flood,
            limite_teste_push, limite_ip, limite_ws_ip, limite_cadastro, falhas_login_conta, falhas_admin_global,
-           falhas_sala, limite_audio_ouvir)
+           falhas_sala, limite_audio_ouvir, limite_cargas)
 
 
 def ip_cliente(request):
@@ -507,10 +521,16 @@ async def tratar_pixel(ws, usuario_id, dados):
                           "mensagem": "🚫 Você está travado por flood e não pode pintar agora."})
         return
     restante = tela_pixels.pintar(usuario_id, x, y, cor)
-    if restante:
-        await enviar(ws, {"tipo": "pixel_espera", "espera": round(restante, 1)})
-    else:
+    if not restante:
         await enviar_para_usuario(usuario_id, {"tipo": "pixel_ok", "espera": tela_mod.ESPERA_S})
+        return
+    # Ainda na espera: usa uma carga, se tiver (até 4 por segundo).
+    saldo = await db.gastar_carga(usuario_id) if limite_cargas.permitir(usuario_id) else None
+    if saldo is None:
+        await enviar(ws, {"tipo": "pixel_espera", "espera": round(restante, 1)})
+        return
+    tela_pixels.pintar_com_carga(usuario_id, x, y, cor)
+    await enviar_para_usuario(usuario_id, {"tipo": "pixel_ok", "espera": round(restante, 1), "cargas": saldo})
 
 
 async def tratar_pixel_info(ws, dados):
@@ -522,6 +542,85 @@ async def tratar_pixel_info(ws, dados):
                       "apelido": row["apelido"] if row else None, "quando": iso(row["criado_em"]) if row else None})
 
 
+async def descarregar_tela():
+    """Envia/grava os pixels pendentes e atualiza ranking e convites."""
+    contagens = await tela_pixels.descarregar(transmitir)
+    if not contagens:
+        return
+    for usuario_id, total in await db.somar_pixels(contagens):
+        # Quem acabou de passar do mínimo de pixels ativa o convite com que entrou.
+        if total >= PIXELS_PARA_ATIVAR > total - contagens.get(usuario_id, 0):
+            await ativar_convite_de(usuario_id)
+
+
+async def ativar_convite_de(convidado_id):
+    resultado = await db.ativar_convite(convidado_id, RECOMPENSA_CONVITE, MAX_CONVITES_DIA)
+    if not resultado:
+        return
+    convidador_id, saldo = resultado
+    apelido = conexoes.get(convidado_id, {}).get("apelido", "Alguém")
+    log.info("convite ativado: %s -> %s (+%d cargas)", apelido, convidador_id, RECOMPENSA_CONVITE)
+    await enviar_para_usuario(convidador_id, {"tipo": "convite_ativado", "apelido": apelido,
+                                              "ganhou": RECOMPENSA_CONVITE, "cargas": saldo})
+    notificar([convidador_id], "🎉 Convite aceito!", f"{apelido} entrou pelo seu convite: +{RECOMPENSA_CONVITE} cargas de pixel ⚡", "TELA")
+
+
+def coletar_tempo(usuario_ids=None):
+    """Tira o tempo online acumulado desde a última coleta. Retorna {usuario_id: segundos}."""
+    agora = time.monotonic()
+    tempos = {}
+    for uid in (usuario_ids if usuario_ids is not None else list(conexoes)):
+        info = conexoes.get(uid)
+        if info and info.get("online_desde"):
+            segundos = int(agora - info["online_desde"])
+            if segundos > 0:
+                tempos[uid] = segundos
+                info["online_desde"] += segundos
+    return tempos
+
+
+async def gerar_codigo_convite(usuario_id):
+    for _ in range(5):
+        codigo = await db.codigo_convite(usuario_id, "".join(secrets.choice(ALFABETO_CODIGO) for _ in range(7)))
+        if codigo:
+            return codigo
+    raise RuntimeError("não consegui gerar código de convite")
+
+
+async def tratar_ranking(ws, usuario_id, dados):
+    ordem = "tempo" if dados.get("ordem") == "tempo" else "pixels"
+    await db.somar_tempo(coletar_tempo())  # inclui o tempo de quem está online agora
+    lista = await db.ranking(ordem)
+    eu = await db.posicao_no_ranking(usuario_id, ordem)
+    await enviar(ws, {
+        "tipo": "ranking", "ordem": ordem,
+        "lista": [{"apelido": r["apelido"], "pixels": r["pixels_pintados"], "segundos": r["segundos_online"]} for r in lista],
+        "eu": {"posicao": eu["posicao"], "pixels": eu["pixels_pintados"], "segundos": eu["segundos_online"]} if eu else None,
+    })
+
+
+async def tratar_convite(ws, usuario_id, request_base):
+    codigo = await gerar_codigo_convite(usuario_id)
+    resumo = await db.resumo_convites(usuario_id)
+    await enviar(ws, {
+        "tipo": "convite", "link": f"{request_base}/c/{codigo}", "codigo": codigo,
+        "ativos": resumo["ativos"], "pendentes": resumo["pendentes"],
+        "recompensa": RECOMPENSA_CONVITE, "bonus": BONUS_CONVIDADO, "minimo": PIXELS_PARA_ATIVAR,
+    })
+
+
+# Imagem da tela para compartilhar (cache curto: não gera PNG a cada pedido)
+_png_cache = {"quando": 0.0, "dados": b""}
+
+
+async def tela_png(request):
+    if time.monotonic() - _png_cache["quando"] > 15:
+        _png_cache["dados"] = await asyncio.to_thread(tela_mod.png, bytes(tela_pixels.pixels))
+        _png_cache["quando"] = time.monotonic()
+    return web.Response(body=_png_cache["dados"], content_type="image/png",
+                        headers={"Cache-Control": "public, max-age=60"})
+
+
 # ---------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------
@@ -529,7 +628,7 @@ async def tratar_pixel_info(ws, dados):
 async def limite_por_ip(request, handler):
     """Freia quem martela a API/WebSocket (cada chamada pode consultar o banco)."""
     caminho = request.path
-    if caminho.startswith("/api/") or caminho in ("/ws", "/health"):
+    if caminho.startswith(("/api/", "/c/")) or caminho in ("/ws", "/health"):
         ip = ip_cliente(request)
         if not limite_ip.permitir(ip) or (caminho == "/ws" and not limite_ws_ip.permitir(ip)):
             return web.json_response({"erro": "Muitas requisições. Aguarde um pouco."}, status=429,
@@ -559,11 +658,36 @@ def url_base(request):
     return ("https" if requisicao_https(request) else "http") + "://" + host
 
 
-async def pagina(request):
+def montar_pagina(request, convite_de=None):
+    base = url_base(request)
+    if convite_de:
+        valores = {
+            "OG_TITULO": f"🎨 {convite_de} te chamou para pintar na SalaVip!",
+            "OG_DESCRICAO": f"Entre pelo convite e ganhe {BONUS_CONVIDADO} cargas de pixel. Pinte a tela junto com todo mundo e converse no chat.",
+            "OG_IMAGEM": f"{base}/api/tela.png?v={int(time.time() // 60)}",
+            "OG_IMAGEM_TIPO": "image/png", "OG_IMAGEM_L": "960", "OG_IMAGEM_A": "540",
+            "OG_URL": f"{base}{request.path}",
+        }
+    else:
+        valores = {
+            "OG_TITULO": "SalaVip — Chat",
+            "OG_DESCRICAO": "Bate-papo com tela de pixels, mural de recados, conversas privadas e salas com senha. Entre e converse!",
+            "OG_IMAGEM": f"{base}/icones/og-image.jpg",
+            "OG_IMAGEM_TIPO": "image/jpeg", "OG_IMAGEM_L": "1200", "OG_IMAGEM_A": "630",
+            "OG_URL": f"{base}/",
+        }
+    valores["CONVITE_DE"] = convite_de or ""
+    texto = PAGINA.replace("{{URL_BASE}}", base)
+    for chave, valor in valores.items():
+        texto = texto.replace("{{" + chave + "}}", html.escape(valor, quote=True))
+    return texto
+
+
+async def pagina(request, convite_de=None):
     nonce = secrets.token_urlsafe(16)
-    html = PAGINA.replace("{{URL_BASE}}", url_base(request)).replace("<script>", f'<script nonce="{nonce}">')
+    corpo = montar_pagina(request, convite_de).replace("<script>", f'<script nonce="{nonce}">')
     return web.Response(
-        text=html,
+        text=corpo,
         content_type="text/html",
         headers={
             "Cache-Control": "no-cache",
@@ -575,6 +699,17 @@ async def pagina(request):
             ),
         },
     )
+
+
+async def pagina_convite(request):
+    """Link de convite: mostra a tela atual na prévia e guarda o código para o cadastro."""
+    codigo = request.match_info["codigo"].upper()
+    dono = await db.dono_do_convite(codigo) if CODIGO_VALIDO.match(codigo) else None
+    resposta = await pagina(request, dono["apelido"] if dono else None)
+    if dono:
+        resposta.set_cookie(COOKIE_CONVITE, codigo, max_age=7 * 86400, httponly=True, samesite="Lax",
+                            secure=requisicao_https(request), path="/")
+    return resposta
 
 
 async def service_worker(request):
@@ -661,6 +796,7 @@ async def entrar(request):
         return web.json_response({"erro": erro}, status=400)
 
     criado = False
+    bonus_convite = None
     ip = ip_cliente(request)
     conta = apelido.lower()
     if falhas_login_conta.excedido(conta):
@@ -673,6 +809,7 @@ async def entrar(request):
             return web.json_response({"erro": "Senha incorreta para este nome."}, status=401)
         falhas_login_conta.zerar(conta)
         usuario_id, apelido = usuario["id"], usuario["apelido"]
+        await db.registrar_ip(usuario_id, ip)
     else:
         if not limite_cadastro.permitir(ip):
             return web.json_response({"erro": "Muitas contas criadas deste endereço. Tente mais tarde."}, status=429)
@@ -681,10 +818,19 @@ async def entrar(request):
             return web.json_response({"erro": "Esse nome acabou de ser registrado. Tente outro."}, status=409)
         criado = True
         log.info("novo usuário: %s (IP %s)", apelido, ip)
+        await db.registrar_ip(usuario_id, ip)
+        codigo = (request.cookies.get(COOKIE_CONVITE) or "").upper()
+        dono = await db.dono_do_convite(codigo) if CODIGO_VALIDO.match(codigo) else None
+        if dono and dono["id"] != usuario_id:
+            await db.registrar_convite(usuario_id, dono["id"], ip, BONUS_CONVIDADO)
+            bonus_convite = {"de": dono["apelido"], "cargas": BONUS_CONVIDADO}
+            log.info("%s entrou pelo convite de %s", apelido, dono["apelido"])
 
     token = secrets.token_urlsafe(32)
     await db.criar_sessao(hash_token(token), usuario_id, SESSAO_DIAS)
-    resposta = web.json_response({"apelido": apelido, "criado": criado})
+    resposta = web.json_response({"apelido": apelido, "criado": criado, "bonus_convite": bonus_convite})
+    if request.cookies.get(COOKIE_CONVITE):
+        resposta.del_cookie(COOKIE_CONVITE, path="/")
     resposta.set_cookie(
         NOME_COOKIE, token, max_age=SESSAO_DIAS * 86400, httponly=True,
         samesite="Lax", secure=requisicao_https(request), path="/",
@@ -726,9 +872,12 @@ async def websocket(request):
     info = conexoes.setdefault(usuario_id, {"apelido": sessao["apelido"], "sockets": set()})
     info["apelido"] = sessao["apelido"]
     info["ip"] = ip_cliente(request)
+    info["base"] = url_base(request)
+    info.setdefault("online_desde", time.monotonic())
     info["sockets"].add(ws)
     try:
         await db.atualizar_ultimo_acesso(usuario_id)
+        await db.registrar_ip(usuario_id, info["ip"])
         info["bloqueado_ate"] = await db.bloqueio_atual(usuario_id)
         mural, privadas, msgs_salas = await db.carregar_historico(usuario_id, TTL_HORAS)
         historico_privadas = {}
@@ -754,7 +903,7 @@ async def websocket(request):
             "usuarios": [{"apelido": u["apelido"], "online": u["id"] in conexoes} for u in usuarios],
             "contatos": await db.listar_contatos(usuario_id),
             "salas": [dict(s) for s in await db.listar_salas(usuario_id)],
-            "tela": info_tela(usuario_id),
+            "tela": {**info_tela(usuario_id), "cargas": await db.cargas_de(usuario_id)},
         })
         if primeira_conexao:
             await transmitir({"tipo": "presenca", "apelido": info["apelido"], "online": True})
@@ -774,8 +923,10 @@ async def websocket(request):
     finally:
         info["sockets"].discard(ws)
         if not info["sockets"]:
+            tempo = coletar_tempo([usuario_id])
             conexoes.pop(usuario_id, None)
             try:
+                await db.somar_tempo(tempo)
                 await db.atualizar_ultimo_acesso(usuario_id)
                 await transmitir({"tipo": "presenca", "apelido": info["apelido"], "online": False})
             except Exception:
@@ -811,6 +962,11 @@ async def tratar_mensagem(ws, usuario_id, dados):
     tipo = dados.get("tipo")
 
     if tipo == "visibilidade":  # enviado por versões antigas da página; não é mais usado
+        return
+
+    # Pixel tem limite próprio (1 a cada 10 s, ou 4/s gastando cargas).
+    if tipo == "pixel":
+        await tratar_pixel(ws, usuario_id, dados)
         return
 
     if not limite_acoes.permitir(usuario_id):
@@ -849,12 +1005,16 @@ async def tratar_mensagem(ws, usuario_id, dados):
                 await enviar_para_usuario(usuario_id, {"tipo": "contatos", "contatos": await db.listar_contatos(usuario_id)})
         return
 
-    if tipo == "pixel":
-        await tratar_pixel(ws, usuario_id, dados)
-        return
-
     if tipo == "pixel_info":
         await tratar_pixel_info(ws, dados)
+        return
+
+    if tipo == "ranking":
+        await tratar_ranking(ws, usuario_id, dados)
+        return
+
+    if tipo == "convite":
+        await tratar_convite(ws, usuario_id, info.get("base", ""))
         return
 
     if tipo == "criar_sala":
@@ -1243,6 +1403,26 @@ async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
                 await desconectar_usuario(alvo["id"])
             await ok(f"Senha de {alvo['apelido']} redefinida. As sessões dele foram encerradas.")
 
+    elif cmd == "/cargas":
+        if meu_papel != db.MASTER:
+            await ok("Só o Master pode dar cargas.")
+            return
+        try:
+            alvo_nome, quantidade = partes[1], int(partes[2])
+        except (IndexError, ValueError):
+            await ok("Uso: /cargas Usuario N")
+            return
+        alvo = await db.buscar_usuario_por_apelido(alvo_nome)
+        if not alvo:
+            await ok(f"Usuário {alvo_nome} não encontrado.")
+            return
+        quantidade = max(-100000, min(quantidade, 100000))
+        saldo = await db.dar_cargas(alvo["id"], quantidade)
+        await enviar_para_usuario(alvo["id"], {"tipo": "cargas", "cargas": saldo,
+                                               "mensagem": f"⚡ Você recebeu {quantidade} cargas de pixel!" if quantidade > 0 else None})
+        log.info("%s deu %d cargas para %s", conexoes[usuario_id]["apelido"], quantidade, alvo["apelido"])
+        await ok(f"⚡ {alvo['apelido']} agora tem {saldo} cargas.")
+
     elif cmd == "/tela":
         partes_tela = texto.split()
         sub = partes_tela[1].lower() if len(partes_tela) >= 2 else ""
@@ -1255,7 +1435,7 @@ async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
             except ValueError:
                 await ok("Uso: /tela desfazer Usuario [minutos]")
                 return
-            await tela_pixels.descarregar(transmitir)  # garante que o histórico está gravado
+            await descarregar_tela()  # garante que o histórico está gravado
             linhas = await db.pixels_para_desfazer(alvo["id"], minutos)
             alteracoes = [(r["x"], r["y"], r["anterior"] if r["anterior"] is not None
                            else tela_mod.INICIAL[r["y"] * tela_mod.LARGURA + r["x"]]) for r in linhas]
@@ -1421,6 +1601,7 @@ async def manutencao(app):
                     log.info("%d mensagens expiradas apagadas", apagadas)
                 await db.limpar_sessoes_expiradas()
                 await db.limpar_log_tela()
+                await db.somar_tempo(coletar_tempo())
                 tela_pixels.limpar_esperas()
                 for limite in LIMITES:
                     limite.limpar()
@@ -1431,7 +1612,7 @@ async def manutencao(app):
         while True:
             await asyncio.sleep(0.25)
             try:
-                await tela_pixels.descarregar(transmitir)
+                await descarregar_tela()
             except Exception:
                 log.exception("erro ao atualizar a tela de pixels")
 
@@ -1467,8 +1648,9 @@ async def ao_encerrar(app):
         await sessao_push.close()
     try:  # grava o que falta da tela antes de fechar o banco
         tela_pixels.para_enviar.clear()
-        await tela_pixels.descarregar(transmitir)
+        await descarregar_tela()
         await tela_pixels.salvar()
+        await db.somar_tempo(coletar_tempo())
     except Exception:
         log.exception("erro ao salvar a tela de pixels")
     await db.fechar()
@@ -1486,6 +1668,8 @@ def criar_app():
     app.router.add_post("/api/push/cancelar", push_cancelar)
     app.router.add_post("/api/audio", audio_enviar)
     app.router.add_get("/api/tela", tela_imagem)
+    app.router.add_get("/api/tela.png", tela_png)
+    app.router.add_get(r"/c/{codigo:[A-Za-z0-9]{1,20}}", pagina_convite)
     app.router.add_get(r"/api/audio/{id:[A-Za-z0-9_-]{16,64}}", audio_ouvir)
     app.router.add_post("/api/entrar", entrar)
     app.router.add_post("/api/sair", sair)

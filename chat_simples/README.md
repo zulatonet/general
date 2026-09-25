@@ -31,6 +31,8 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `POST /api/audio?para=Nome&duracao=ms` | Envia áudio (sem `para` = Mural, só Admins) |
 | `GET /api/audio/{id}` | Toca o áudio (privado: só quem recebeu, uma vez) |
 | `GET /api/tela` | Imagem da Tela de Pixels (1 byte por pixel, comprimida) |
+| `GET /api/tela.png` | Foto da tela em PNG 960×540 (pública; usada na prévia e no compartilhamento) |
+| `GET /c/{código}` | Link de convite (prévia com a tela atual; guarda o convite para o cadastro) |
 
 ## Variáveis de ambiente
 
@@ -171,6 +173,24 @@ todo mundo pinta junto, com paleta de 16 cores.
 - As mudanças chegam para todos em tempo real, em lotes a cada 0,25 s.
 - Embaixo da tela aparece o **último recado do Mural** (toque para abrir o Mural).
 - Desenho inicial: "PREENCHA SEUS PIXELS / A CADA 10 SEGUNDOS".
+- **É uma guerra:** ninguém é dono de pixel, qualquer um pinta por cima de qualquer um.
+
+### Cargas ⚡, convites e ranking
+- **Cargas** são pixels guardados: durante a espera de 10 s, o botão vira
+  **⚡ Pintar** e gasta 1 carga para pintar na hora (até 4 por segundo).
+- **Convite:** o botão **📤 Convidar** gera o link pessoal (`/c/CÓDIGO`) e
+  compartilha com a **imagem atual da tela** (no celular abre o
+  compartilhamento do WhatsApp, Instagram etc.; também há botão de WhatsApp e
+  de copiar). A prévia do link mostra a tela atual e "Fulano te chamou para
+  pintar na SalaVip!".
+  - Quem entra pelo convite ganha **15 cargas** ao criar a conta.
+  - Quando o convidado pinta **10 pixels**, quem convidou ganha **20 cargas**
+    (e recebe aviso/notificação).
+  - Contra fraude: não conta se o convidado entrou do mesmo IP de quem
+    convidou; no máximo 10 convites premiados por dia; só vale para conta nova.
+- **🏆 Ranking:** "Mais pixels" e "Mais tempo" (tempo conectado), top 20 com a
+  sua posição destacada.
+- Master: `/cargas Nome N` dá (ou tira, com N negativo) cargas — bom para eventos.
 - **Moderação (Admins):** `/tela desfazer Nome [minutos]` volta os pixels de um
   vândalo para as cores de antes; `/tela apagar X Y Largura Altura` pinta de
   branco uma área.
@@ -265,6 +285,7 @@ comandos que a pessoa pode usar.
 | `/apagar` | Admin | Apaga a conversa aberta (Mural ou privada) |
 | `/apagar Usuario` | Admin | Apaga todas as mensagens de Usuario |
 | `/apagar total` | Master | Apaga todas as mensagens (mantém usuários) |
+| `/cargas Usuario N` | Master | Dá N cargas de pixel (negativo tira) |
 
 > Ao atualizar de uma versão anterior, o admin existente vira Master
 > automaticamente.
@@ -327,6 +348,8 @@ comandos que a pessoa pode usar.
 - `audios` (id, mensagem_id, mime, dados): arquivos de áudio, apagados junto com a mensagem
 - `tela` (id=1, largura, altura, pixels): a Tela de Pixels inteira
 - `tela_log` (x, y, cor, usuario_id, criado_em): histórico de pinturas (30 dias)
+- `convites` (convidado_id, convidador_id, ip, criado_em, ativado_em, recompensado)
+- `usuarios` também guarda `cargas`, `pixels_pintados`, `segundos_online`, `codigo_convite`, `ultimo_ip`
 - `config` (chave, valor): configurações geradas pelo chat (ex.: chave VAPID)
 - `mensagens` (id, remetente_id, destinatario_id, sala_id, texto, enviado_em, lida,
   audio_id, audio_duracao_ms, audio_unico, audio_ouvido)

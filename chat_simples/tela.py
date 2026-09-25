@@ -5,7 +5,9 @@ banco a cada poucos segundos. As mudanças vão para todos em lotes pequenos
 (a cada 0,25 s) pelo WebSocket. Ninguém é dono de pixel: qualquer um pinta
 por cima.
 """
+import struct
 import time
+import zlib
 
 import db
 
@@ -85,6 +87,7 @@ class Tela:
         self.sujo = False
         self.ultimo_salvo = time.monotonic()
         self.ultimo_pixel = {}  # usuario_id -> momento (monotonic) do último pixel
+        self.contagens = {}     # usuario_id -> pixels pintados ainda não somados no ranking
 
     async def carregar(self):
         row = await db.carregar_tela()
@@ -109,19 +112,28 @@ class Tela:
         if restante > 0:
             return restante
         self.ultimo_pixel[usuario_id] = time.monotonic()
-        self.aplicar([(x, y, cor)], usuario_id)
+        self.aplicar([(x, y, cor)], usuario_id, contar=True)
         return 0.0
 
-    def aplicar(self, alteracoes, usuario_id):
-        """Aplica [(x, y, cor)] sem espera (usado também pela moderação)."""
+    def pintar_com_carga(self, usuario_id, x, y, cor):
+        """Pinta sem esperar (a carga já foi descontada por quem chamou)."""
+        self.aplicar([(x, y, cor)], usuario_id, contar=True)
+
+    def aplicar(self, alteracoes, usuario_id, contar=False):
+        """Aplica [(x, y, cor)] sem espera. `contar` soma no ranking (moderação não conta)."""
         for x, y, cor in alteracoes:
             self.pixels[y * LARGURA + x] = cor
             self.para_enviar.append((x, y, cor))
             self.para_gravar.append((x, y, cor, usuario_id))
+            if contar:
+                self.contagens[usuario_id] = self.contagens.get(usuario_id, 0) + 1
         self.sujo = True
 
     async def descarregar(self, transmitir):
-        """Transmite as mudanças pendentes, grava o histórico e salva a tela de tempos em tempos."""
+        """Transmite as mudanças pendentes, grava o histórico e salva a tela de tempos em tempos.
+
+        Retorna {usuario_id: pixels pintados} desde a última chamada (para o ranking).
+        """
         # Grava o histórico antes de avisar, para "quem pintou" já responder certo.
         if self.para_gravar:
             lote, self.para_gravar = self.para_gravar, []
@@ -131,6 +143,8 @@ class Tela:
             await transmitir({"tipo": "pixels", "p": lote})
         if self.sujo and time.monotonic() - self.ultimo_salvo >= SALVAR_A_CADA_S:
             await self.salvar()
+        contagens, self.contagens = self.contagens, {}
+        return contagens
 
     async def salvar(self):
         self.sujo = False
@@ -141,3 +155,25 @@ class Tela:
         agora = time.monotonic()
         for uid in [u for u, t in self.ultimo_pixel.items() if agora - t > ESPERA_S]:
             del self.ultimo_pixel[uid]
+
+
+# ---------------------------------------------------------------
+# Imagem PNG da tela (para compartilhar e para a prévia do link)
+# ---------------------------------------------------------------
+def _bloco_png(tipo, dados):
+    return struct.pack(">I", len(dados)) + tipo + dados + struct.pack(">I", zlib.crc32(tipo + dados) & 0xFFFFFFFF)
+
+
+def png(pixels, escala=3):
+    """PNG com paleta (8 bits), ampliado `escala` vezes sem borrar os pixels."""
+    largura, altura = LARGURA * escala, ALTURA * escala
+    paleta = b"".join(bytes.fromhex(c[1:]) for c in PALETA)
+    linhas = bytearray()
+    for y in range(ALTURA):
+        linha = bytes(pixels[y * LARGURA:(y + 1) * LARGURA])
+        ampliada = bytes(b for b in linha for _ in range(escala))
+        for _ in range(escala):
+            linhas += b"\x00" + ampliada  # filtro 0 (nenhum) + índices da paleta
+    cabecalho = struct.pack(">IIBBBBB", largura, altura, 8, 3, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + _bloco_png(b"IHDR", cabecalho) + _bloco_png(b"PLTE", paleta)
+            + _bloco_png(b"IDAT", zlib.compress(bytes(linhas), 9)) + _bloco_png(b"IEND", b""))

@@ -7,18 +7,18 @@
 <meta name="description" content="SalaVip: bate-papo com mural de recados, conversas privadas e salas com senha. Entre e converse!">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SalaVip">
-<meta property="og:title" content="SalaVip — Chat">
-<meta property="og:description" content="Bate-papo com mural de recados, conversas privadas e salas com senha. Entre e converse!">
-<meta property="og:url" content="{{URL_BASE}}/">
-<meta property="og:image" content="{{URL_BASE}}/icones/og-image.jpg">
-<meta property="og:image:secure_url" content="{{URL_BASE}}/icones/og-image.jpg">
-<meta property="og:image:type" content="image/jpeg">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Logo SalaVip">
+<meta property="og:title" content="{{OG_TITULO}}">
+<meta property="og:description" content="{{OG_DESCRICAO}}">
+<meta property="og:url" content="{{OG_URL}}">
+<meta property="og:image" content="{{OG_IMAGEM}}">
+<meta property="og:image:secure_url" content="{{OG_IMAGEM}}">
+<meta property="og:image:type" content="{{OG_IMAGEM_TIPO}}">
+<meta property="og:image:width" content="{{OG_IMAGEM_L}}">
+<meta property="og:image:height" content="{{OG_IMAGEM_A}}">
+<meta property="og:image:alt" content="SalaVip">
 <meta property="og:locale" content="pt_BR">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="{{URL_BASE}}/icones/og-image.jpg">
+<meta name="twitter:image" content="{{OG_IMAGEM}}">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#03110b">
 <link rel="apple-touch-icon" href="/icones/apple-touch-icon.png">
@@ -156,6 +156,8 @@ button { font-family: inherit; }
 /* Tela de Pixels */
 .item.tela { background: #2a2a5a; }
 .item.tela.selecionado { background: #4a4a9f; }
+.item.ranking { background: #3a3320; }
+.item.ranking.selecionado { background: #6a5a20; }
 #tela-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 #tela-viewport { flex: 1; position: relative; overflow: hidden; background: #101018; touch-action: none; cursor: crosshair; min-height: 120px; }
 #tela-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: pixelated; image-rendering: crisp-edges; box-shadow: 0 0 0 1px #333; }
@@ -171,6 +173,26 @@ button { font-family: inherit; }
 .cor.ativa { border-color: #fff; box-shadow: 0 0 0 2px #02BE01; }
 #tela-pintar { border: none; border-radius: 8px; background: #02BE01; color: white; font-weight: bold; font-size: 16px; min-width: 110px; cursor: pointer; padding: 0 12px; }
 #tela-pintar:disabled { background: #3a3a4a; color: #aab; cursor: default; }
+#tela-barra { display: flex; align-items: center; gap: 8px; }
+#tela-cargas { font-size: 14px; font-weight: bold; color: #ffd54a; background: #2a2a1a; border: 1px solid #554; border-radius: 16px; padding: 5px 10px; white-space: nowrap; }
+#tela-barra .espaco { flex: 1; }
+#tela-barra button { border: 1px solid #444; background: #1e1e2f; color: #eee; border-radius: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+#tela-barra #btn-convidar { background: #02BE01; border-color: #02BE01; font-weight: bold; }
+#modal-convite .caixa { text-align: left; }
+#modal-convite h2 { text-align: center; }
+#convite-previa { width: 100%; border-radius: 8px; image-rendering: pixelated; margin: 6px 0 10px; border: 1px solid #444; }
+#convite-link { font-size: 14px; }
+#modal-convite .regras { font-size: 13px; color: #bbc; line-height: 1.5; margin: 8px 0; }
+#modal-convite button { margin-top: 8px; }
+#ranking-abas { display: flex; gap: 6px; margin-bottom: 10px; }
+#ranking-abas button { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #444; background: #1e1e2f; color: #ccd; cursor: pointer; font-size: 14px; }
+#ranking-abas button.ativa { background: #4a4a8f; color: white; border-color: #4a4a8f; }
+.rank { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: #2a2a3f; margin-bottom: 6px; font-size: 15px; }
+.rank.eu { outline: 2px solid #02BE01; }
+.rank .pos { width: 34px; text-align: center; font-weight: bold; color: #aab; }
+.rank .quem { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .valor { font-weight: bold; color: #ffd54a; white-space: nowrap; }
+.rank .sub2 { font-size: 12px; color: #99a; white-space: nowrap; }
 #tela-recado { padding: 8px 12px; background: #2a5a3f; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 @media (max-width: 700px) {
   #tela-paleta { grid-template-columns: repeat(8, 1fr); }
@@ -191,7 +213,7 @@ button { font-family: inherit; }
 }
 </style>
 </head>
-<body>
+<body data-convite="{{CONVITE_DE}}">
 <div id="modal-nome" class="modal escondido">
   <form class="caixa" id="modal-form">
     <img class="logo" src="/icones/logo-256.png" alt="SalaVip" width="128" height="128">
@@ -258,6 +280,24 @@ button { font-family: inherit; }
   </div>
 </div>
 
+<div id="modal-convite" class="modal escondido">
+  <div class="caixa">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2>📤 Convide e ganhe cargas</h2>
+    <img id="convite-previa" alt="Tela de Pixels agora">
+    <div class="regras">
+      Cada amigo que entrar pelo seu link <b>ganha <span id="cv-bonus">15</span> cargas ⚡</b>.<br>
+      Quando ele pintar <span id="cv-minimo">10</span> pixels, <b>você ganha <span id="cv-recompensa">20</span> cargas</b>.<br>
+      Cargas deixam pintar sem esperar os 10 segundos.
+    </div>
+    <input id="convite-link" readonly>
+    <button class="principal" id="convite-compartilhar">📤 Compartilhar com a imagem da tela</button>
+    <button class="secundario" id="convite-whatsapp">WhatsApp</button>
+    <button class="secundario" id="convite-copiar">Copiar link</button>
+    <div class="info" id="convite-status"></div>
+  </div>
+</div>
+
 <div id="topo">
   <div id="topo-esq">
     <button id="menu" aria-label="Conversas">☰<span class="ponto escondido" id="menu-ponto"></span></button>
@@ -295,6 +335,12 @@ button { font-family: inherit; }
         </div>
       </div>
       <div id="tela-painel">
+        <div id="tela-barra">
+          <span id="tela-cargas" title="Cargas: pixels guardados para pintar sem esperar">⚡ 0</span>
+          <span class="espaco"></span>
+          <button id="btn-ranking">🏆 Ranking</button>
+          <button id="btn-convidar">📤 Convidar</button>
+        </div>
         <div id="tela-info">Toque num pixel, escolha a cor e aperte Pintar.</div>
         <div id="tela-linha">
           <div id="tela-paleta"></div>
@@ -322,6 +368,7 @@ try { localStorage.removeItem("chat_device_id"); localStorage.removeItem("chat_n
 
 const MURAL = "MURAL";
 const TELA = "TELA";
+const RANKING = "RANKING";
 const LIMITE_LISTA = 200;   // máximo de pessoas renderizadas em "Todos" sem busca
 const ADMIN = 1, MASTER = 2;
 
@@ -436,7 +483,8 @@ const TRATADORES = {
     contatos = new Set(d.contatos);
     salas = new Map(d.salas.map(s => [s.nome, s]));
     iniciarTela(d.tela);
-    const aindaExiste = selecionado === MURAL || selecionado === TELA || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
+    definirCargas(d.tela.cargas || 0);
+    const aindaExiste = selecionado === MURAL || selecionado === TELA || selecionado === RANKING || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
     selecionar(aindaExiste ? selecionado : MURAL, false);
     if (conversaPendente) { abrirChave(conversaPendente); conversaPendente = null; }
     if (pushSuportado && Notification.permission === "granted") inscreverPush();
@@ -468,8 +516,21 @@ const TRATADORES = {
   },
   renomeado(d) { renomear(d.de, d.para); },
   pixels(d) { aplicarPixels(d.p); },
-  pixel_ok(d) { definirEsperaTela(d.espera); },
-  pixel_espera(d) { definirEsperaTela(d.espera); if (d.mensagem) avisoTela(d.mensagem); },
+  pixel_ok(d) { definirEsperaTela(d.espera); if (typeof d.cargas === "number") definirCargas(d.cargas); },
+  pixel_espera(d) {
+    definirEsperaTela(d.espera);
+    avisoTela(d.mensagem || (cargas ? "Espere um instante…" : "⏳ Espere a contagem ou convide amigos para ganhar cargas ⚡"));
+  },
+  cargas(d) { definirCargas(d.cargas); if (d.mensagem) avisoTela(d.mensagem); },
+  convite_ativado(d) {
+    definirCargas(d.cargas);
+    const t = "🎉 " + d.apelido + " entrou pelo seu convite e já está pintando: +" + d.ganhou + " cargas ⚡";
+    avisoTela(t);
+    if (selecionado !== TELA) adicionarSistema(t);
+    tocarSom();
+  },
+  convite(d) { mostrarConvite(d); },
+  ranking(d) { mostrarRanking(d); },
   pixel_info(d) { mostrarInfoPixel(d); },
   audio_ouvido(d) {
     for (const msgs of Object.values(conversas)) msgs.forEach(m => { if (m.audio && m.audio.id === d.id) m.audio.ouvido = true; });
@@ -571,6 +632,9 @@ el("modal-form").onsubmit = async (e) => {
       return;
     }
     el("modal-senha").value = "";
+    if (dados.bonus_convite) {
+      setTimeout(() => avisoTela("🎁 Você entrou pelo convite de " + dados.bonus_convite.de + " e ganhou " + dados.bonus_convite.cargas + " cargas ⚡!"), 1500);
+    }
     conectar();
   } catch (err) {
     el("modal-erro").textContent = "Sem conexão com o servidor.";
@@ -781,6 +845,11 @@ function renderizarLista() {
   itemTela.appendChild(span("Tela de Pixels", "nome-item"));
   lista.appendChild(itemTela);
 
+  const itemRanking = criarItem("ranking" + (selecionado === RANKING ? " selecionado" : ""), () => selecionar(RANKING));
+  itemRanking.appendChild(span("🏆"));
+  itemRanking.appendChild(span("Ranking", "nome-item"));
+  lista.appendChild(itemRanking);
+
   const mural = criarItem("mural" + (selecionado === MURAL ? " selecionado" : ""), () => selecionar(MURAL));
   mural.appendChild(span("📢"));
   mural.appendChild(span("Mural de Recados", "nome-item"));
@@ -841,6 +910,7 @@ el("veu").onclick = () => abrirMenu(false);
 // ---------------------------------------------------------------
 function selecionar(chave, fecharMenu = true) {
   selecionado = chave;
+  if (chave === RANKING) enviarWs({ tipo: "ranking", ordem: ordemRanking });
   delete naoLidas[chave];
   if (ehPrivada(chave)) enviarWs({ tipo: "marcar_lidas", interlocutor: nomeDaChave(chave) });
   atualizarTitulo();
@@ -856,7 +926,10 @@ function atualizarTitulo() {
   const acao = el("titulo-acao");
   acao.classList.add("escondido");
   let nome, sub;
-  if (selecionado === TELA) {
+  if (selecionado === RANKING) {
+    nome = "🏆 Ranking";
+    sub = "Quem mais pinta e quem mais participa da SalaVip";
+  } else if (selecionado === TELA) {
     nome = "🎨 Tela de Pixels";
     sub = "Todos pintam juntos · 1 pixel a cada " + (telaInfo ? telaInfo.espera_s : 10) + " segundos";
   } else if (selecionado === MURAL) {
@@ -893,7 +966,7 @@ function atualizarEntrada() {
   input.disabled = !ativo;
   el("enviar").disabled = !ativo;
   input.placeholder = dica;
-  el("form").classList.toggle("escondido", selecionado === TELA);
+  el("form").classList.toggle("escondido", selecionado === TELA || selecionado === RANKING);
   atualizarBotoes();
 }
 
@@ -911,6 +984,7 @@ function renderizarConversa() {
   el("mensagens").classList.toggle("escondido", naTela);
   if (naTela) { mostrarTela(); return; }
   const container = el("mensagens");
+  if (selecionado === RANKING) { renderizarRanking(); return; }
   container.innerHTML = "";
   const msgs = conversas[selecionado] || [];
   if (!msgs.length && meuNome) {
@@ -1006,7 +1080,7 @@ document.addEventListener("visibilitychange", () => {
 
 function abrirChave(chave) {
   if (!meuNome) { conversaPendente = chave; return; }
-  const ok = chave === MURAL || chave === TELA
+  const ok = chave === MURAL || chave === TELA || chave === RANKING
     || (ehPrivada(chave) && usuarios.has(nomeDaChave(chave)))
     || (ehSala(chave) && salas.get(nomeDaChave(chave))?.membro);
   selecionar(ok ? chave : MURAL);
@@ -1608,6 +1682,12 @@ function definirEsperaTela(segundos) {
 function atualizarBotaoPintar() {
   const b = el("tela-pintar");
   const falta = Math.ceil((esperaAte - Date.now()) / 1000);
+  if (falta > 0 && cargas > 0) {
+    // Na espera, mas com carga: pinta na hora gastando 1 carga.
+    b.disabled = !pixelEscolhido || !conectado() || !telaPixels;
+    b.textContent = pixelEscolhido ? "⚡ Pintar" : "⏳ " + falta + "s";
+    return;
+  }
   if (falta > 0) {
     b.disabled = true;
     b.textContent = "⏳ " + falta + "s";
@@ -1619,11 +1699,13 @@ function atualizarBotaoPintar() {
 }
 
 el("tela-pintar").onclick = () => {
-  if (!pixelEscolhido || Date.now() < esperaAte) return;
+  if (!pixelEscolhido) return;
+  const naEspera = Date.now() < esperaAte;
+  if (naEspera && cargas <= 0) return;
   const { x, y } = pixelEscolhido;
   if (telaPixels[y * telaInfo.largura + x] === corEscolhida) { avisoTela("Esse pixel já está com essa cor. Escolha outra cor."); return; }
   enviarWs({ tipo: "pixel", x, y, cor: corEscolhida });
-  definirEsperaTela(telaInfo.espera_s);   // o servidor confirma ou corrige
+  if (!naEspera) definirEsperaTela(telaInfo.espera_s);   // o servidor confirma ou corrige
 };
 
 function atualizarRecadoTela() {
@@ -1635,6 +1717,136 @@ function atualizarRecadoTela() {
   faixa.classList.remove("escondido");
 }
 el("tela-recado").onclick = () => selecionar(MURAL);
+
+// ---------------------------------------------------------------
+// Cargas, convites e ranking
+// ---------------------------------------------------------------
+let cargas = 0;
+let ordemRanking = "pixels";
+let ultimoRanking = null;
+let dadosConvite = null;
+
+function definirCargas(n) {
+  cargas = Math.max(0, n | 0);
+  el("tela-cargas").textContent = "⚡ " + cargas;
+  atualizarBotaoPintar();
+}
+
+// Veio por um link de convite? Mostra no login e limpa o endereço.
+const convidadoPor = document.body.dataset.convite || "";
+if (location.pathname.startsWith("/c/")) history.replaceState(null, "", "/" + location.search);
+if (convidadoPor) {
+  document.querySelector("#modal-nome .dica").textContent =
+    "🎁 " + convidadoPor + " te convidou! Crie sua conta (escolha um nome e uma senha) e ganhe cargas de pixel ⚡ para pintar sem esperar.";
+}
+
+function abrirConvite() {
+  el("convite-status").textContent = "";
+  el("convite-previa").src = "/api/tela.png?t=" + Date.now();
+  el("modal-convite").classList.remove("escondido");
+  abrirMenu(false);
+  enviarWs({ tipo: "convite" });
+}
+el("btn-convidar").onclick = abrirConvite;
+el("btn-ranking").onclick = () => selecionar(RANKING);
+
+function linkConvite() {
+  // ?t= muda a cada envio: o WhatsApp busca a prévia de novo e mostra a tela atual.
+  return dadosConvite ? dadosConvite.link + "?t=" + Math.floor(Date.now() / 60000) : "";
+}
+function textoConvite() {
+  return "🎨 Tô pintando na SalaVip! Entra pelo meu link e ganha " + (dadosConvite ? dadosConvite.bonus : 15) +
+    " cargas de pixel pra pintar sem esperar 👇\n" + linkConvite();
+}
+
+function mostrarConvite(d) {
+  dadosConvite = d;
+  el("cv-bonus").textContent = d.bonus;
+  el("cv-minimo").textContent = d.minimo;
+  el("cv-recompensa").textContent = d.recompensa;
+  el("convite-link").value = linkConvite();
+  el("convite-status").textContent = "Amigos que já contaram: " + d.ativos + (d.pendentes ? " · esperando pintar: " + d.pendentes : "");
+}
+
+document.querySelectorAll("#modal-convite [data-fechar]").forEach(b => b.onclick = () => el("modal-convite").classList.add("escondido"));
+el("modal-convite").addEventListener("click", (e) => { if (e.target === el("modal-convite")) el("modal-convite").classList.add("escondido"); });
+
+el("convite-compartilhar").onclick = async () => {
+  if (!dadosConvite) return;
+  const texto = textoConvite();
+  try {
+    const blob = await (await fetch("/api/tela.png?t=" + Date.now())).blob();
+    const arquivo = new File([blob], "salavip-tela.png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+      await navigator.share({ files: [arquivo], text: texto, title: "SalaVip" });
+      return;
+    }
+    if (navigator.share) { await navigator.share({ text: texto, title: "SalaVip" }); return; }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;   // a pessoa cancelou
+  }
+  copiarConvite();
+};
+el("convite-whatsapp").onclick = () => {
+  if (dadosConvite) window.open("https://wa.me/?text=" + encodeURIComponent(textoConvite()), "_blank", "noopener");
+};
+async function copiarConvite() {
+  if (!dadosConvite) return;
+  try { await navigator.clipboard.writeText(textoConvite()); el("convite-status").textContent = "✅ Link copiado! Cole no WhatsApp, Instagram ou onde quiser."; }
+  catch (e) { el("convite-link").select(); el("convite-status").textContent = "Selecione e copie o link acima."; }
+}
+el("convite-copiar").onclick = copiarConvite;
+
+function formatarTempo(seg) {
+  const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60);
+  return h ? h + "h " + m + "min" : m + "min";
+}
+
+function mostrarRanking(d) {
+  ultimoRanking = d;
+  if (selecionado === RANKING) renderizarRanking();
+}
+
+function renderizarRanking() {
+  const c = el("mensagens");
+  c.innerHTML = "";
+  const abas = document.createElement("div");
+  abas.id = "ranking-abas";
+  [["pixels", "🎨 Mais pixels"], ["tempo", "⏱️ Mais tempo"]].forEach(([ordem, rotulo]) => {
+    const b = document.createElement("button");
+    b.textContent = rotulo;
+    b.className = ordemRanking === ordem ? "ativa" : "";
+    b.onclick = () => { ordemRanking = ordem; ultimoRanking = null; renderizarRanking(); enviarWs({ tipo: "ranking", ordem }); };
+    abas.appendChild(b);
+  });
+  c.appendChild(abas);
+  const d = ultimoRanking;
+  if (!d || d.ordem !== ordemRanking) {
+    c.appendChild(Object.assign(document.createElement("div"), { className: "vazio", textContent: "Carregando..." }));
+    return;
+  }
+  const medalha = (i) => ["🥇", "🥈", "🥉"][i] || String(i + 1);
+  const linha = (pos, apelido, pixels, segundos, eu) => {
+    const div = document.createElement("div");
+    div.className = "rank" + (eu ? " eu" : "");
+    div.appendChild(span(pos, "pos"));
+    div.appendChild(span(apelido + (eu ? " (você)" : ""), "quem"));
+    const principal = ordemRanking === "tempo" ? formatarTempo(segundos) : pixels + " px";
+    const outro = ordemRanking === "tempo" ? pixels + " px" : formatarTempo(segundos);
+    div.appendChild(span(outro, "sub2"));
+    div.appendChild(span(principal, "valor"));
+    return div;
+  };
+  if (!d.lista.length) c.appendChild(Object.assign(document.createElement("div"), { className: "vazio", textContent: "Ninguém pontuou ainda. Seja o primeiro! 🎨" }));
+  d.lista.forEach((r, i) => c.appendChild(linha(medalha(i), r.apelido, r.pixels, r.segundos, r.apelido === meuNome)));
+  if (d.eu && !d.lista.some(r => r.apelido === meuNome)) {
+    c.appendChild(Object.assign(document.createElement("div"), { className: "vazio", textContent: "···" }));
+    c.appendChild(linha(String(d.eu.posicao), meuNome, d.eu.pixels, d.eu.segundos, true));
+  }
+  const dica = Object.assign(document.createElement("div"), { className: "vazio",
+    textContent: "Pinte mais e convide amigos: cada amigo ativo te dá cargas ⚡ para pintar sem esperar." });
+  c.appendChild(dica);
+}
 
 renderizarLista();
 conectar();
