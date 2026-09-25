@@ -82,19 +82,32 @@ python chat.py        # http://localhost:8080
 ## Comandos
 
 Interceptados no servidor e nunca exibidos no chat. Comandos inválidos ou de
-quem não é admin são ignorados em silêncio.
+quem não tem permissão são ignorados em silêncio.
+
+### Papéis
+
+- **Master** 👑: um só. É quem assumiu com `/admin SENHA`. Pode tudo, inclusive
+  promover e revogar Admins.
+- **Admin** 🛡️: vários. Modera o chat, mas não pode agir sobre o Master nem
+  sobre outros Admins (`/nome`, `/senha`, `/apagar Usuario`).
 
 | Comando | Quem pode | Efeito |
 |---|---|---|
-| `/admin SENHA` | Qualquer um (com a senha) | Vira admin, se ainda não houver um |
-| `/admin transferir Nome` | Admin | Transfere a patente para Nome |
-| `/admin reset SENHA` | Qualquer um (com a senha) | Remove o admin atual (se offline há `ADMIN_RESET_MINUTES`) |
+| `/admin SENHA` | Qualquer um (com a senha) | Vira Master, se ainda não houver um |
+| `/admin reset SENHA` | Qualquer um (com a senha) | Tira o Master atual (se offline há `ADMIN_RESET_MINUTES`); ele continua Admin |
+| `/admin promover Nome` | Master | Torna Nome um Admin |
+| `/admin revogar Nome` | Master | Tira o Admin de Nome |
+| `/admin transferir Nome` | Master | Passa o Master para Nome (o antigo continua Admin) |
+| `/admin lista` | Admin | Mostra o Master e os Admins |
 | `/nome Usuario NovoNome` | Admin | Troca o nome de Usuario, mantendo o histórico |
 | `/senha Usuario NovaSenha` | Admin | Redefine a senha e derruba as sessões dele |
 | `/apagar` | Admin | Apaga a conversa aberta (Geral ou privada) |
 | `/apagar Usuario` | Admin | Apaga todas as mensagens de Usuario |
-| `/apagar total` | Admin | Apaga todas as mensagens (mantém usuários) |
-| `/help` | Admin | Lista os comandos |
+| `/apagar total` | Master | Apaga todas as mensagens (mantém usuários) |
+| `/help` | Admin | Lista os comandos (o Master vê também os dele) |
+
+> Ao atualizar de uma versão anterior, o admin existente vira Master
+> automaticamente.
 
 ## Proteções
 
@@ -109,7 +122,7 @@ quem não é admin são ignorados em silêncio.
 
 ## Banco de dados
 
-- `usuarios` (id, apelido, senha_hash, is_admin, criado_em, ultimo_acesso)
+- `usuarios` (id, apelido, senha_hash, is_admin, is_master, criado_em, ultimo_acesso)
 - `sessoes` (token_hash, usuario_id, criado_em, expira_em)
 - `mensagens` (id, remetente_id, destinatario_id — NULL = Geral —, texto, enviado_em, lida)
 

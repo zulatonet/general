@@ -41,16 +41,10 @@ log = logging.getLogger("chat")
 
 PAGINA = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
-HELP_TEXTO = """📖 Comandos disponíveis:
+HELP_ADMIN = """📖 Comandos de Admin:
 
-/admin SENHA
-  Vira Admin (só se ainda não houver um).
-
-/admin transferir Nome
-  Transfere a patente de Admin para Nome.
-
-/admin reset SENHA
-  Remove o Admin atual (só se ele estiver offline há algum tempo).
+/admin lista
+  Mostra o Master e os Admins.
 
 /nome Usuario NovoNome
   Troca o nome de Usuario para NovoNome (o histórico é mantido).
@@ -64,11 +58,35 @@ HELP_TEXTO = """📖 Comandos disponíveis:
 /apagar Usuario
   Apaga todas as mensagens que Usuario mandou (em todo lugar).
 
+/help
+  Mostra esta lista de comandos.
+
+Admins não podem usar /nome, /senha ou /apagar Usuario
+contra o Master ou outros Admins."""
+
+HELP_MASTER = HELP_ADMIN + """
+
+👑 Comandos do Master:
+
+/admin promover Nome
+  Torna Nome um Admin.
+
+/admin revogar Nome
+  Tira o Admin de Nome.
+
+/admin transferir Nome
+  Passa o Master para Nome (você continua Admin).
+
 /apagar total
   Apaga todas as mensagens do chat (mantém usuários).
 
-/help
-  Mostra esta lista de comandos."""
+Sem Master (ou para assumir um vago):
+
+/admin SENHA
+  Vira Master, se ainda não houver um.
+
+/admin reset SENHA
+  Remove o Master atual (só se ele estiver offline há algum tempo)."""
 
 
 # ---------------------------------------------------------------
@@ -408,65 +426,110 @@ async def tratar_comando(ws, usuario_id, texto, destino):
     async def ok(mensagem):
         await enviar(ws, {"tipo": "comando_ok", "mensagem": mensagem})
 
-    if cmd == "/admin" and len(partes) >= 2:
-        sub = partes[1].lower()
-
+    # Comandos com a senha do admin: valem para qualquer um
+    if cmd == "/admin" and len(partes) >= 2 and partes[1].lower() not in ("promover", "revogar", "transferir", "lista"):
         # /admin reset SENHA
-        if sub == "reset" and len(partes) >= 3:
-            if not limite_senha_admin.permitir(usuario_id) or not senha_admin_correta(partes[2]):
+        if partes[1].lower() == "reset":
+            if len(partes) < 3 or not limite_senha_admin.permitir(usuario_id) or not senha_admin_correta(partes[2]):
                 return
-            admin = await db.buscar_admin()
-            if not admin:
-                await ok("Não há admin. Use /admin <senha> para assumir.")
-            elif admin["id"] in conexoes:
-                await ok("Admin está online. Não é possível resetar.")
-            elif datetime.now(timezone.utc) - admin["ultimo_acesso"] < TEMPO_MINIMO_RESET:
-                await ok("Admin esteve online recentemente. Aguarde mais tempo.")
+            master = await db.buscar_master()
+            if not master:
+                await ok("Não há Master. Use /admin <senha> para assumir.")
+            elif master["id"] in conexoes:
+                await ok("Master está online. Não é possível resetar.")
+            elif datetime.now(timezone.utc) - master["ultimo_acesso"] < TEMPO_MINIMO_RESET:
+                await ok("Master esteve online recentemente. Aguarde mais tempo.")
             else:
-                await db.remover_admin()
-                log.info("admin %s removido via reset", admin["apelido"])
-                await ok("Admin anterior removido. Use /admin <senha> para assumir.")
-            return
-
-        # /admin transferir Nome
-        if sub == "transferir" and len(partes) >= 3:
-            if not await db.is_admin(usuario_id):
-                return
-            alvo = await db.buscar_usuario_por_apelido(partes[2])
-            if alvo:
-                await db.tornar_admin(alvo["id"])
-                log.info("admin transferido para %s", alvo["apelido"])
-                await ok(f"Admin transferido para {alvo['apelido']}.")
-            else:
-                await ok(f"Usuário {partes[2]} não encontrado.")
+                await db.remover_master()
+                log.info("master %s removido via reset", master["apelido"])
+                await ok("Master anterior removido (continua Admin). Use /admin <senha> para assumir.")
             return
 
         # /admin SENHA
         if not limite_senha_admin.permitir(usuario_id) or not senha_admin_correta(partes[1]):
             return
-        if await db.assumir_admin_se_vago(usuario_id):
-            log.info("%s agora é admin", conexoes[usuario_id]["apelido"])
-            await ok("Você agora é o Admin.")
+        if await db.assumir_master_se_vago(usuario_id):
+            log.info("%s agora é master", conexoes[usuario_id]["apelido"])
+            await ok("👑 Você agora é o Master.")
         else:
-            await ok("Já existe um Admin.")
+            await ok("Já existe um Master.")
         return
 
-    # A partir daqui, só admin
-    if not await db.is_admin(usuario_id):
+    # A partir daqui, só admin ou master
+    meu_papel = await db.papel(usuario_id)
+    if meu_papel < db.ADMIN:
         return
+
+    async def buscar_alvo(apelido, exigir_permissao=True):
+        """Busca o usuário; admins não podem agir sobre o Master nem sobre outros Admins."""
+        alvo = await db.buscar_usuario_por_apelido(apelido)
+        if not alvo:
+            await ok(f"Usuário {apelido} não encontrado.")
+            return None
+        if exigir_permissao and alvo["id"] != usuario_id and meu_papel != db.MASTER:
+            if await db.papel(alvo["id"]) >= db.ADMIN:
+                await ok("Você não pode fazer isso com o Master ou outro Admin.")
+                return None
+        return alvo
 
     if cmd == "/help":
-        await ok(HELP_TEXTO)
+        await ok(HELP_MASTER if meu_papel == db.MASTER else HELP_ADMIN)
+
+    elif cmd == "/admin":
+        sub = partes[1].lower() if len(partes) >= 2 else ""
+        if sub == "lista":
+            admins = await db.listar_admins()
+            linhas = [("👑 " if a["is_master"] else "🛡️ ") + a["apelido"] for a in admins]
+            await ok("Equipe:\n" + "\n".join(linhas))
+            return
+        if sub not in ("promover", "revogar", "transferir"):
+            return
+        if meu_papel != db.MASTER:
+            await ok("Só o Master pode promover, revogar ou transferir.")
+            return
+        if len(partes) < 3:
+            await ok(f"Uso: /admin {sub} Nome")
+            return
+        alvo = await buscar_alvo(partes[2])
+        if not alvo:
+            return
+        nome = alvo["apelido"]
+        if alvo["id"] == usuario_id:
+            await ok("Você já é o Master.")
+            return
+        alvo_papel = await db.papel(alvo["id"])
+
+        if sub == "promover":
+            if alvo_papel >= db.ADMIN:
+                await ok(f"{nome} já é Admin.")
+                return
+            await db.definir_admin(alvo["id"], True)
+            log.info("%s promovido a admin", nome)
+            await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": "🛡️ Você agora é Admin. Digite /help para ver os comandos."})
+            await ok(f"{nome} agora é Admin.")
+        elif sub == "revogar":
+            if alvo_papel < db.ADMIN:
+                await ok(f"{nome} não é Admin.")
+                return
+            await db.definir_admin(alvo["id"], False)
+            log.info("admin de %s revogado", nome)
+            await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": "Você não é mais Admin."})
+            await ok(f"Admin de {nome} revogado.")
+        else:  # transferir
+            await db.transferir_master(alvo["id"])
+            log.info("master transferido para %s", nome)
+            await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": "👑 Você agora é o Master. Digite /help para ver os comandos."})
+            await ok(f"Master transferido para {nome}. Você continua Admin.")
 
     elif cmd == "/nome":
         if len(partes) < 3:
             await ok("Uso: /nome Usuario NovoNome")
             return
-        alvo = await db.buscar_usuario_por_apelido(partes[1])
+        alvo = await buscar_alvo(partes[1])
         novo = partes[2]
         if not alvo:
-            await ok(f"Usuário {partes[1]} não encontrado.")
-        elif erro := validar_apelido(novo):
+            return
+        if erro := validar_apelido(novo):
             await ok(erro)
         elif not await db.trocar_apelido(alvo["id"], novo):
             await ok(f"O nome {novo} já está em uso.")
@@ -481,14 +544,14 @@ async def tratar_comando(ws, usuario_id, texto, destino):
         if len(partes) < 3:
             await ok("Uso: /senha Usuario NovaSenha")
             return
-        alvo = await db.buscar_usuario_por_apelido(partes[1])
+        alvo = await buscar_alvo(partes[1])
         if not alvo:
-            await ok(f"Usuário {partes[1]} não encontrado.")
-        elif erro := validar_senha(partes[2]):
+            return
+        if erro := validar_senha(partes[2]):
             await ok(erro)
         else:
             await db.trocar_senha(alvo["id"], await gerar_hash_senha(partes[2]))
-            log.info("senha de %s redefinida pelo admin", alvo["apelido"])
+            log.info("senha de %s redefinida por %s", alvo["apelido"], conexoes[usuario_id]["apelido"])
             if alvo["id"] != usuario_id:
                 await desconectar_usuario(alvo["id"])
             await ok(f"Senha de {alvo['apelido']} redefinida. As sessões dele foram encerradas.")
@@ -501,9 +564,8 @@ async def tratar_comando(ws, usuario_id, texto, destino):
                 await transmitir({"tipo": "apagado", "escopo": "geral"})
                 await ok("Histórico do Geral apagado.")
                 return
-            alvo = await db.buscar_usuario_por_apelido(destino)
+            alvo = await buscar_alvo(destino, exigir_permissao=False)
             if not alvo:
-                await ok(f"Usuário {destino} não encontrado.")
                 return
             await db.apagar_conversa_privada(usuario_id, alvo["id"])
             await enviar_para_usuario(usuario_id, {"tipo": "apagado", "escopo": "privada", "com": alvo["apelido"]})
@@ -511,14 +573,16 @@ async def tratar_comando(ws, usuario_id, texto, destino):
             await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": "Conversa apagada pelo Admin."})
             await ok(f"Conversa com {alvo['apelido']} apagada.")
         elif partes[1].lower() == "total":
+            if meu_papel != db.MASTER:
+                await ok("Só o Master pode apagar tudo.")
+                return
             await db.apagar_tudo()
             await transmitir({"tipo": "apagado", "escopo": "total"})
             await transmitir({"tipo": "sistema", "mensagem": "Todas as mensagens foram apagadas pelo Admin."})
             await ok("Todas as mensagens foram apagadas.")
         else:
-            alvo = await db.buscar_usuario_por_apelido(partes[1])
+            alvo = await buscar_alvo(partes[1])
             if not alvo:
-                await ok(f"Usuário {partes[1]} não encontrado.")
                 return
             await db.apagar_mensagens_de(alvo["id"])
             await transmitir({"tipo": "apagado", "escopo": "usuario", "usuario": alvo["apelido"]})

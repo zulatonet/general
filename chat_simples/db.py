@@ -17,7 +17,12 @@ CREATE TABLE IF NOT EXISTS usuarios (
     ultimo_acesso TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_apelido ON usuarios (lower(apelido));
-CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_um_admin ON usuarios (is_admin) WHERE is_admin;
+-- Vários admins; só um master (quem assumiu com /admin SENHA).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_master BOOLEAN NOT NULL DEFAULT FALSE;
+DROP INDEX IF EXISTS idx_usuarios_um_admin;
+UPDATE usuarios SET is_master = TRUE
+    WHERE is_admin AND NOT EXISTS (SELECT 1 FROM usuarios WHERE is_master);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_um_master ON usuarios (is_master) WHERE is_master;
 
 CREATE TABLE IF NOT EXISTS sessoes (
     token_hash TEXT PRIMARY KEY,
@@ -103,28 +108,33 @@ async def trocar_senha(usuario_id, senha_hash):
 
 
 # ---------------------------------------------------------------
-# Admin
+# Admin e Master
 # ---------------------------------------------------------------
-async def buscar_admin():
-    return await pool.fetchrow("SELECT id, apelido, ultimo_acesso FROM usuarios WHERE is_admin LIMIT 1")
+# Papéis: 0 = usuário, 1 = admin, 2 = master (admin com poder total).
+USUARIO, ADMIN, MASTER = 0, 1, 2
 
 
-async def is_admin(usuario_id):
-    return bool(await pool.fetchval("SELECT is_admin FROM usuarios WHERE id = $1", usuario_id))
+async def papel(usuario_id):
+    row = await pool.fetchrow("SELECT is_admin, is_master FROM usuarios WHERE id = $1", usuario_id)
+    if not row:
+        return USUARIO
+    return MASTER if row["is_master"] else ADMIN if row["is_admin"] else USUARIO
 
 
-async def tornar_admin(usuario_id):
-    async with pool.acquire() as conn, conn.transaction():
-        await conn.execute("UPDATE usuarios SET is_admin = FALSE WHERE is_admin")
-        await conn.execute("UPDATE usuarios SET is_admin = TRUE WHERE id = $1", usuario_id)
+async def buscar_master():
+    return await pool.fetchrow("SELECT id, apelido, ultimo_acesso FROM usuarios WHERE is_master LIMIT 1")
 
 
-async def assumir_admin_se_vago(usuario_id):
-    """Torna admin só se ainda não houver um. Retorna True se conseguiu."""
+async def listar_admins():
+    return await pool.fetch("SELECT apelido, is_master FROM usuarios WHERE is_admin ORDER BY is_master DESC, lower(apelido)")
+
+
+async def assumir_master_se_vago(usuario_id):
+    """Torna master só se ainda não houver um. Retorna True se conseguiu."""
     try:
         resultado = await pool.execute(
-            """UPDATE usuarios SET is_admin = TRUE
-               WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM usuarios WHERE is_admin)""",
+            """UPDATE usuarios SET is_admin = TRUE, is_master = TRUE
+               WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM usuarios WHERE is_master)""",
             usuario_id,
         )
     except asyncpg.UniqueViolationError:
@@ -132,8 +142,22 @@ async def assumir_admin_se_vago(usuario_id):
     return resultado == "UPDATE 1"
 
 
-async def remover_admin():
-    await pool.execute("UPDATE usuarios SET is_admin = FALSE WHERE is_admin")
+async def transferir_master(usuario_id):
+    """Passa o master para usuario_id; o master anterior continua admin."""
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute("UPDATE usuarios SET is_master = FALSE WHERE is_master")
+        await conn.execute("UPDATE usuarios SET is_admin = TRUE, is_master = TRUE WHERE id = $1", usuario_id)
+
+
+async def remover_master():
+    """Tira o master (ele continua admin comum)."""
+    await pool.execute("UPDATE usuarios SET is_master = FALSE WHERE is_master")
+
+
+async def definir_admin(usuario_id, admin):
+    await pool.execute(
+        "UPDATE usuarios SET is_admin = $1 WHERE id = $2 AND NOT is_master", admin, usuario_id
+    )
 
 
 # ---------------------------------------------------------------
