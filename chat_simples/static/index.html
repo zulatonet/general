@@ -205,13 +205,16 @@ button { font-family: inherit; }
     <details>
       <summary>Não chegou? Veja o que liberar no Android</summary>
       <ol>
-        <li><b>Notificações do app:</b> Configurações → Apps → <b>Chrome</b> (e também <b>SalaVip</b>, se instalou) → Notificações → permitir tudo, inclusive a categoria do site.</li>
+        <li><b>Notificações:</b> Configurações → Apps → <b>Chrome</b> (e <b>SalaVip</b>, se instalou) → Notificações → permitir tudo, inclusive a categoria do site.</li>
         <li><b>Bateria:</b> Configurações → Apps → Chrome → Bateria → <b>Sem restrições</b>. Faça o mesmo no app SalaVip.</li>
         <li><b>No Chrome:</b> ⋮ → Configurações → Configurações do site → Notificações → <b>chat.salavip.live</b> permitido.</li>
-        <li><b>Xiaomi, Samsung, Motorola etc.:</b> ative “Início automático” / “Atividade em segundo plano” para o Chrome. Não use “Forçar parada”.</li>
+        <li><b>Não deslize o app para fora dos recentes.</b> Em muitos celulares isso força a parada do Chrome e nada chega até abrir de novo. Só aperte "voltar" ou "início".</li>
+        <li><b>Xiaomi / Redmi / Poco:</b> Configurações → Apps → Gerenciar apps → Chrome → <b>Início automático</b> ligado e Economia de bateria → <b>Sem restrições</b>. Nos recentes, puxe o card do app para baixo e toque no <b>cadeado</b>.</li>
+        <li><b>Samsung:</b> Configurações → Bateria → Limites de uso em segundo plano → <b>Apps que nunca suspendem</b> → adicione Chrome e SalaVip.</li>
+        <li><b>Motorola / outros:</b> Configurações → Apps → Chrome → Bateria → <b>Sem restrições</b> / "Permitir atividade em segundo plano".</li>
         <li>Confira se o <b>Não perturbe</b> está desligado.</li>
       </ol>
-      O SalaVip usa o mesmo serviço de push do Google que o WhatsApp: com isso liberado, a notificação chega com o app fechado.
+      Mensagens seguidas da mesma conversa aparecem juntas numa notificação só, com o total entre parênteses.
     </details>
   </div>
 </div>
@@ -364,7 +367,6 @@ const TRATADORES = {
     salas = new Map(d.salas.map(s => [s.nome, s]));
     const aindaExiste = selecionado === MURAL || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
     selecionar(aindaExiste ? selecionado : MURAL, false);
-    enviarVisibilidade();
     if (conversaPendente) { abrirChave(conversaPendente); conversaPendente = null; }
     if (pushSuportado && Notification.permission === "granted") inscreverPush();
     atualizarAviso();
@@ -903,11 +905,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 });
 window.addEventListener("appinstalled", () => { promptInstalar = null; atualizarAviso(); });
 
-function enviarVisibilidade() {
-  enviarWs({ tipo: "visibilidade", visivel: document.visibilityState === "visible" });
-}
 document.addEventListener("visibilitychange", () => {
-  enviarVisibilidade();
   if (document.visibilityState === "visible") fecharNotificacoes(selecionado);
 });
 

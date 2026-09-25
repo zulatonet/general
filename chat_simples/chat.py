@@ -252,9 +252,7 @@ def formatar_msg(m):
 # ---------------------------------------------------------------
 # Conexões em memória
 # ---------------------------------------------------------------
-# usuario_id -> {"apelido": str, "sockets": set[WebSocketResponse], "visiveis": set[WebSocketResponse],
-#                "bloqueado_ate": datetime | None}
-# "visiveis" = abas/apps com a tela aberta; quem não tem nenhuma recebe push.
+# usuario_id -> {"apelido": str, "sockets": set[WebSocketResponse], "bloqueado_ate": datetime | None}
 conexoes = {}
 
 
@@ -303,25 +301,27 @@ def resumir(texto, limite=200):
     return texto if len(texto) <= limite else texto[:limite - 1] + "…"
 
 
+# O push vai sempre para todos os aparelhos do destinatário. Quem decide se mostra
+# é o próprio aparelho (sw.js): se o chat estiver aberto na tela dele, não mostra.
+# Assim um app morto/congelado nunca fica sem aviso por o servidor achar que está aberto.
 def notificar(usuario_ids, titulo, corpo, chave):
-    """Manda push (em segundo plano) para quem não está com o chat aberto na tela."""
-    ids = {uid for uid in usuario_ids if not conexoes.get(uid, {}).get("visiveis")}
+    """Manda push (em segundo plano) para os aparelhos dos usuários."""
+    ids = set(usuario_ids)
     if ids and vapid:
         _agendar_push(db.inscricoes_de(ids), titulo, corpo, chave)
 
 
 def notificar_todos_exceto(usuario_id, titulo, corpo, chave):
     if vapid:
-        _agendar_push(db.inscricoes_exceto(usuario_id), titulo, corpo, chave,
-                      filtro=lambda uid: not conexoes.get(uid, {}).get("visiveis"))
+        _agendar_push(db.inscricoes_exceto(usuario_id), titulo, corpo, chave)
 
 
-def _agendar_push(consulta, titulo, corpo, chave, filtro=None):
+def _agendar_push(consulta, titulo, corpo, chave):
     dados = {"titulo": titulo, "corpo": resumir(corpo), "chave": chave}
 
     async def rodar():
         try:
-            inscricoes = [i for i in await consulta if filtro is None or filtro(i["usuario_id"])]
+            inscricoes = await consulta
             await asyncio.gather(*[_enviar_push(i, dados) for i in inscricoes])
         except Exception:
             log.exception("erro ao enviar notificações")
@@ -558,10 +558,9 @@ async def websocket(request):
 
     usuario_id = sessao["id"]
     primeira_conexao = usuario_id not in conexoes
-    info = conexoes.setdefault(usuario_id, {"apelido": sessao["apelido"], "sockets": set(), "visiveis": set()})
+    info = conexoes.setdefault(usuario_id, {"apelido": sessao["apelido"], "sockets": set()})
     info["apelido"] = sessao["apelido"]
     info["sockets"].add(ws)
-    info["visiveis"].add(ws)  # até a página dizer o contrário
     try:
         await db.atualizar_ultimo_acesso(usuario_id)
         info["bloqueado_ate"] = await db.bloqueio_atual(usuario_id)
@@ -607,7 +606,6 @@ async def websocket(request):
         log.exception("erro na conexão de %s", info["apelido"])
     finally:
         info["sockets"].discard(ws)
-        info["visiveis"].discard(ws)
         if not info["sockets"]:
             conexoes.pop(usuario_id, None)
             try:
@@ -645,8 +643,7 @@ async def tratar_mensagem(ws, usuario_id, dados):
     info = conexoes[usuario_id]
     tipo = dados.get("tipo")
 
-    if tipo == "visibilidade":
-        (info["visiveis"].add if dados.get("visivel") else info["visiveis"].discard)(ws)
+    if tipo == "visibilidade":  # enviado por versões antigas da página; não é mais usado
         return
 
     if tipo == "estado_push":

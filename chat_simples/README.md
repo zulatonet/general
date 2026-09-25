@@ -119,8 +119,14 @@ mensagem, mesmo com o app fechado.
 **Quando chega notificação:**
 - Mensagem privada, mensagem de sala (para os membros), recado no Mural e
   quando alguém coloca você numa sala.
-- Só para quem **não** está com o chat aberto na tela. Com o chat aberto, toca
-  o som dentro da página.
+- O servidor manda para **todos** os aparelhos da pessoa, e cada aparelho
+  decide: se o chat está aberto na tela dele, não mostra (a página já toca o
+  som); se não, mostra. Assim, com o chat aberto no computador, o celular
+  continua avisando.
+- **Android:** se o app for "morto" (deslizado para fora dos recentes), muitos
+  celulares forçam a parada do Chrome e nada chega até abrir de novo. Libere o
+  Chrome e o SalaVip em bateria/início automático (o painel 🔔 Notificações
+  explica por marca).
 - Várias mensagens da mesma conversa viram uma notificação só, com contador.
 - Tocar na notificação abre direto a conversa.
 - Ao sair da conta, o aparelho para de receber as notificações dela.

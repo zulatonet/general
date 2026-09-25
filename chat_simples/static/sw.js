@@ -16,6 +16,12 @@ self.addEventListener("push", (event) => {
 async function mostrar(dados) {
   const titulo = dados.titulo || "Nova mensagem";
   const chave = dados.chave || "MURAL";
+  // Chat aberto na tela deste aparelho: a própria página já mostra e toca o som.
+  // (O teste de notificação sempre aparece.)
+  if (chave !== "teste") {
+    const janelas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (janelas.some(j => j.visibilityState === "visible")) return;
+  }
   // Várias mensagens da mesma conversa viram uma notificação só (últimas 5 linhas).
   const anteriores = await self.registration.getNotifications({ tag: chave });
   const linhas = anteriores.length ? (anteriores[0].data?.linhas || []) : [];
