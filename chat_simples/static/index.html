@@ -66,8 +66,8 @@ button { font-family: inherit; }
 .msg .nome { font-weight: bold; font-size: 13px; color: #aac; margin-bottom: 2px; }
 .msg .hora { font-size: 11px; color: #999; margin-top: 4px; }
 .vazio { text-align: center; color: #667; font-size: 13px; margin-top: 30px; }
-#form { display: flex; padding: 8px; background: #14141f; gap: 6px; flex-shrink: 0; }
-#texto { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; font-size: 16px; background: #1e1e2f; color: #eee; min-width: 0; }
+#form { display: flex; align-items: flex-end; padding: 8px; background: #14141f; gap: 6px; flex-shrink: 0; }
+#texto { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; font-size: 16px; font-family: inherit; line-height: 1.3; background: #1e1e2f; color: #eee; min-width: 0; resize: none; height: 46px; max-height: 160px; overflow-y: auto; }
 #texto:disabled { opacity: 0.5; }
 #enviar { padding: 12px 16px; border: none; border-radius: 8px; background: #4a4a8f; color: white; cursor: pointer; font-size: 16px; font-weight: bold; }
 #enviar:disabled { opacity: 0.5; }
@@ -176,7 +176,7 @@ button { font-family: inherit; }
     </div>
     <div id="mensagens"></div>
     <div id="form">
-      <input id="texto" placeholder="Mensagem..." disabled autocomplete="off" maxlength="2000">
+      <textarea id="texto" rows="1" placeholder="Mensagem..." disabled autocomplete="off" maxlength="2000"></textarea>
       <button id="enviar" disabled>Enviar</button>
     </div>
   </div>
@@ -762,19 +762,35 @@ function enviarMensagem() {
   if (!texto.trim() || !conectado()) return;
   if (selecionado === MURAL && meuPapel < ADMIN && !texto.trim().startsWith("/")) {
     adicionarSistema("📢 Somente Admins podem escrever no Mural de Recados. Converse no privado ou numa sala.");
-    input.value = "";
+    limparTexto();
     return;
   }
   const dados = { texto, para: null, sala: null };
   if (ehSala(selecionado)) dados.sala = nomeDaChave(selecionado);
   else if (ehPrivada(selecionado)) dados.para = nomeDaChave(selecionado);
   enviarWs(dados);
-  input.value = "";
+  limparTexto();
   input.focus();
 }
 
+// A caixa cresce conforme o texto (até o limite do CSS).
+function ajustarAltura() {
+  const t = el("texto");
+  t.style.height = "auto";
+  t.style.height = Math.max(46, t.scrollHeight + 2) + "px";
+}
+function limparTexto() { el("texto").value = ""; ajustarAltura(); }
+
+// Computador: Enter envia, Shift+Enter pula linha. Celular: Enter pula linha, envia pelo botão.
+const telaDeToque = window.matchMedia("(pointer: coarse)").matches;
 el("enviar").onclick = enviarMensagem;
-el("texto").addEventListener("keydown", (e) => { if (e.key === "Enter") enviarMensagem(); });
+el("texto").addEventListener("input", ajustarAltura);
+el("texto").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !telaDeToque && !e.isComposing) {
+    e.preventDefault();
+    enviarMensagem();
+  }
+});
 
 renderizarLista();
 conectar();
