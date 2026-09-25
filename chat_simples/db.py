@@ -81,6 +81,22 @@ CREATE INDEX IF NOT EXISTS idx_msg_sala ON mensagens (sala_id, id) WHERE sala_id
 CREATE INDEX IF NOT EXISTS idx_msg_nao_lidas ON mensagens (destinatario_id) WHERE NOT lida;
 CREATE INDEX IF NOT EXISTS idx_msg_expira ON mensagens (enviado_em) WHERE destinatario_id IS NOT NULL OR sala_id IS NOT NULL;
 
+-- Configurações geradas pelo próprio chat (ex.: chaves VAPID do push).
+CREATE TABLE IF NOT EXISTS config (
+    chave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
+);
+
+-- Aparelhos inscritos para receber notificações (Web Push).
+CREATE TABLE IF NOT EXISTS push_inscricoes (
+    endpoint   TEXT PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_push_usuario ON push_inscricoes (usuario_id);
+
 -- Bloqueia a API REST pública do Supabase (anon/authenticated) nestas tabelas.
 -- O chat conecta como dono das tabelas, que não é afetado pelo RLS.
 ALTER TABLE usuarios     ENABLE ROW LEVEL SECURITY;
@@ -89,6 +105,8 @@ ALTER TABLE salas        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sala_membros ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contatos     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mensagens    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE config       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_inscricoes ENABLE ROW LEVEL SECURITY;
 """
 
 # Mensagem "viva": do Mural, ou privada/sala dentro da validade ($ttl em horas).
@@ -471,3 +489,54 @@ async def apagar_mensagens_de(usuario_id):
 
 async def apagar_tudo():
     await pool.execute("DELETE FROM mensagens")
+
+
+# ---------------------------------------------------------------
+# Configurações
+# ---------------------------------------------------------------
+async def config_ou_padrao(chave, padrao):
+    """Lê a configuração; se não existir, grava `padrao` (quem gravar primeiro vence)."""
+    await pool.execute("INSERT INTO config (chave, valor) VALUES ($1, $2) ON CONFLICT DO NOTHING", chave, padrao)
+    return await pool.fetchval("SELECT valor FROM config WHERE chave = $1", chave)
+
+
+# ---------------------------------------------------------------
+# Push (notificações)
+# ---------------------------------------------------------------
+MAX_APARELHOS = 10
+
+
+async def salvar_inscricao(usuario_id, endpoint, p256dh, auth):
+    """Liga o aparelho ao usuário (se era de outro, passa a ser deste). Guarda no máximo MAX_APARELHOS."""
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """INSERT INTO push_inscricoes (endpoint, usuario_id, p256dh, auth) VALUES ($1, $2, $3, $4)
+               ON CONFLICT (endpoint) DO UPDATE
+               SET usuario_id = EXCLUDED.usuario_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, criado_em = now()""",
+            endpoint, usuario_id, p256dh, auth,
+        )
+        await conn.execute(
+            """DELETE FROM push_inscricoes WHERE usuario_id = $1 AND endpoint NOT IN (
+                 SELECT endpoint FROM push_inscricoes WHERE usuario_id = $1 ORDER BY criado_em DESC LIMIT $2)""",
+            usuario_id, MAX_APARELHOS,
+        )
+
+
+async def apagar_inscricao(endpoint, usuario_id=None):
+    if usuario_id is None:
+        await pool.execute("DELETE FROM push_inscricoes WHERE endpoint = $1", endpoint)
+    else:
+        await pool.execute("DELETE FROM push_inscricoes WHERE endpoint = $1 AND usuario_id = $2", endpoint, usuario_id)
+
+
+async def inscricoes_de(usuario_ids):
+    return await pool.fetch(
+        "SELECT usuario_id, endpoint, p256dh, auth FROM push_inscricoes WHERE usuario_id = ANY($1::int[])",
+        list(usuario_ids),
+    )
+
+
+async def inscricoes_exceto(usuario_id):
+    return await pool.fetch(
+        "SELECT usuario_id, endpoint, p256dh, auth FROM push_inscricoes WHERE usuario_id <> $1", usuario_id
+    )

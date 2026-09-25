@@ -13,9 +13,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+import aiohttp
 from aiohttp import WSMsgType, web
 
 import db
+import webpush
 
 # ---------------------------------------------------------------
 # Configuração (variáveis de ambiente)
@@ -27,6 +29,11 @@ TEMPO_MINIMO_RESET = timedelta(minutes=int(os.environ.get("ADMIN_RESET_MINUTES",
 SESSAO_DIAS = int(os.environ.get("SESSION_DAYS", "30"))
 TTL_HORAS = int(os.environ.get("PRIVATE_TTL_HOURS", "24"))
 FUSO = os.environ.get("TIMEZONE", "America/Sao_Paulo")
+# Push: se as chaves não forem informadas, o chat gera e guarda no banco.
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:admin@example.com")
+# Só enviamos push para os serviços oficiais dos navegadores (evita SSRF).
+SERVICOS_PUSH = ("fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com")
 NOME_COOKIE = "chat_sessao"
 
 MAX_APELIDO = 20
@@ -52,7 +59,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("chat")
 
-PAGINA = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+PASTA_STATIC = Path(__file__).parent / "static"
+PAGINA = (PASTA_STATIC / "index.html").read_text(encoding="utf-8")
+SERVICE_WORKER = (PASTA_STATIC / "sw.js").read_text(encoding="utf-8")
+MANIFESTO = (PASTA_STATIC / "manifest.webmanifest").read_text(encoding="utf-8")
 
 HELP_USUARIO = """📖 Comandos:
 
@@ -240,7 +250,9 @@ def formatar_msg(m):
 # ---------------------------------------------------------------
 # Conexões em memória
 # ---------------------------------------------------------------
-# usuario_id -> {"apelido": str, "sockets": set[WebSocketResponse], "bloqueado_ate": datetime | None}
+# usuario_id -> {"apelido": str, "sockets": set[WebSocketResponse], "visiveis": set[WebSocketResponse],
+#                "bloqueado_ate": datetime | None}
+# "visiveis" = abas/apps com a tela aberta; quem não tem nenhuma recebe push.
 conexoes = {}
 
 
@@ -274,6 +286,64 @@ async def desconectar_usuario(usuario_id):
     if info:
         for ws in list(info["sockets"]):
             await ws.close(code=4001, message=b"sessao encerrada")
+
+
+# ---------------------------------------------------------------
+# Notificações (Web Push)
+# ---------------------------------------------------------------
+vapid: webpush.Vapid | None = None
+sessao_push: aiohttp.ClientSession | None = None
+tarefas_push = set()
+
+
+def resumir(texto, limite=200):
+    texto = " ".join(texto.split())
+    return texto if len(texto) <= limite else texto[:limite - 1] + "…"
+
+
+def notificar(usuario_ids, titulo, corpo, chave):
+    """Manda push (em segundo plano) para quem não está com o chat aberto na tela."""
+    ids = {uid for uid in usuario_ids if not conexoes.get(uid, {}).get("visiveis")}
+    if ids and vapid:
+        _agendar_push(db.inscricoes_de(ids), titulo, corpo, chave)
+
+
+def notificar_todos_exceto(usuario_id, titulo, corpo, chave):
+    if vapid:
+        _agendar_push(db.inscricoes_exceto(usuario_id), titulo, corpo, chave,
+                      filtro=lambda uid: not conexoes.get(uid, {}).get("visiveis"))
+
+
+def _agendar_push(consulta, titulo, corpo, chave, filtro=None):
+    dados = {"titulo": titulo, "corpo": resumir(corpo), "chave": chave}
+
+    async def rodar():
+        try:
+            inscricoes = [i for i in await consulta if filtro is None or filtro(i["usuario_id"])]
+            await asyncio.gather(*[_enviar_push(i, dados) for i in inscricoes])
+        except Exception:
+            log.exception("erro ao enviar notificações")
+
+    tarefa = asyncio.create_task(rodar())
+    tarefas_push.add(tarefa)
+    tarefa.add_done_callback(tarefas_push.discard)
+
+
+async def _enviar_push(inscricao, dados):
+    try:
+        await webpush.enviar(sessao_push, vapid, inscricao, dados)
+    except webpush.InscricaoExpirada:
+        await db.apagar_inscricao(inscricao["endpoint"])
+    except Exception as erro:
+        log.warning("push falhou (%s): %s", urlparse(inscricao["endpoint"]).netloc, erro)
+
+
+def endpoint_valido(endpoint):
+    if not isinstance(endpoint, str) or len(endpoint) > 1000:
+        return False
+    u = urlparse(endpoint)
+    host = (u.hostname or "").lower()
+    return u.scheme == "https" and any(host == s or host.endswith("." + s) for s in SERVICOS_PUSH)
 
 
 async def avisar_sala(sala_id, nome_sala, mensagem):
@@ -326,6 +396,56 @@ async def pagina(request):
             ),
         },
     )
+
+
+async def service_worker(request):
+    return web.Response(text=SERVICE_WORKER, content_type="application/javascript",
+                        headers={"Cache-Control": "no-cache"})
+
+
+async def manifesto(request):
+    return web.Response(text=MANIFESTO, content_type="application/manifest+json",
+                        headers={"Cache-Control": "no-cache"})
+
+
+async def usuario_da_requisicao(request):
+    token = request.cookies.get(NOME_COOKIE)
+    return await db.buscar_sessao(hash_token(token)) if token else None
+
+
+async def push_chave(request):
+    return web.json_response({"chave": vapid.publica_b64 if vapid else None})
+
+
+async def push_inscrever(request):
+    if not origem_valida(request):
+        return web.json_response({"erro": "Origem inválida."}, status=403)
+    sessao = await usuario_da_requisicao(request)
+    if not sessao:
+        return web.json_response({"erro": "Não autenticado."}, status=401)
+    try:
+        dados = await request.json()
+        endpoint = dados["endpoint"]
+        p256dh, auth = dados["keys"]["p256dh"], dados["keys"]["auth"]
+        assert endpoint_valido(endpoint)
+        assert len(webpush.de_b64url(p256dh)) == 65 and len(webpush.de_b64url(auth)) == 16
+    except Exception:
+        return web.json_response({"erro": "Inscrição inválida."}, status=400)
+    await db.salvar_inscricao(sessao["id"], endpoint, p256dh, auth)
+    return web.json_response({"ok": True})
+
+
+async def push_cancelar(request):
+    if not origem_valida(request):
+        return web.json_response({"erro": "Origem inválida."}, status=403)
+    sessao = await usuario_da_requisicao(request)
+    try:
+        endpoint = (await request.json())["endpoint"]
+    except Exception:
+        return web.json_response({"erro": "Requisição inválida."}, status=400)
+    if sessao and isinstance(endpoint, str):
+        await db.apagar_inscricao(endpoint, sessao["id"])
+    return web.json_response({"ok": True})
 
 
 async def saude(request):
@@ -404,9 +524,10 @@ async def websocket(request):
 
     usuario_id = sessao["id"]
     primeira_conexao = usuario_id not in conexoes
-    info = conexoes.setdefault(usuario_id, {"apelido": sessao["apelido"], "sockets": set()})
+    info = conexoes.setdefault(usuario_id, {"apelido": sessao["apelido"], "sockets": set(), "visiveis": set()})
     info["apelido"] = sessao["apelido"]
     info["sockets"].add(ws)
+    info["visiveis"].add(ws)  # até a página dizer o contrário
     try:
         await db.atualizar_ultimo_acesso(usuario_id)
         info["bloqueado_ate"] = await db.bloqueio_atual(usuario_id)
@@ -452,6 +573,7 @@ async def websocket(request):
         log.exception("erro na conexão de %s", info["apelido"])
     finally:
         info["sockets"].discard(ws)
+        info["visiveis"].discard(ws)
         if not info["sockets"]:
             conexoes.pop(usuario_id, None)
             try:
@@ -488,6 +610,11 @@ async def pode_enviar(ws, usuario_id):
 async def tratar_mensagem(ws, usuario_id, dados):
     info = conexoes[usuario_id]
     tipo = dados.get("tipo")
+
+    if tipo == "visibilidade":
+        (info["visiveis"].add if dados.get("visivel") else info["visiveis"].discard)(ws)
+        return
+
     if not limite_acoes.permitir(usuario_id):
         await enviar(ws, {"tipo": "erro", "mensagem": "Devagar! Você está fazendo coisas rápido demais."})
         return
@@ -550,9 +677,11 @@ async def tratar_mensagem(ws, usuario_id, dados):
             return
         await db.atualizar_ultimo_acesso(usuario_id)
         hora = iso(await db.salvar_mensagem(usuario_id, None, texto, sala["id"]))
-        await enviar_para_usuarios(await db.membros_da_sala(sala["id"]), {
+        membros = await db.membros_da_sala(sala["id"])
+        await enviar_para_usuarios(membros, {
             "tipo": "msg", "sala": sala["nome"], "de": apelido, "texto": texto, "hora": hora,
         })
+        notificar([m for m in membros if m != usuario_id], f"💬 {sala['nome']}", f"{apelido}: {texto}", "s:" + sala["nome"])
         return
 
     # Mural de Recados: só admins escrevem
@@ -565,6 +694,7 @@ async def tratar_mensagem(ws, usuario_id, dados):
         await db.atualizar_ultimo_acesso(usuario_id)
         hora = await db.salvar_mensagem(usuario_id, None, texto)
         await transmitir({"tipo": "msg", "de": apelido, "texto": texto, "privado": False, "hora": iso(hora)})
+        notificar_todos_exceto(usuario_id, "📢 Mural de Recados", f"{apelido}: {texto}", "MURAL")
         return
 
     # Privada
@@ -583,6 +713,7 @@ async def entregar_privada(usuario_id, alvo, texto):
     hora = iso(await db.salvar_mensagem(usuario_id, alvo["id"], texto))
     await enviar_para_usuario(alvo["id"], {"tipo": "msg", "de": apelido, "texto": texto, "privado": True, "hora": hora})
     await enviar_para_usuario(usuario_id, {"tipo": "msg_enviada", "para": alvo["apelido"], "texto": texto, "privado": True, "hora": hora})
+    notificar([alvo["id"]], apelido, texto, "u:" + apelido)
 
 
 # ---------------------------------------------------------------
@@ -883,6 +1014,7 @@ async def comando_sala(ok, usuario_id, meu_papel, cmd, partes, destino, nome_sal
             await ok(f"{alvo['apelido']} já está na sala {sala['nome']}.")
             return
         await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": f"✅ {eu} colocou você na sala {sala['nome']}."})
+        notificar([alvo["id"]], f"💬 {sala['nome']}", f"✅ {eu} colocou você na sala.", "s:" + sala["nome"])
         log.info("%s aceito na sala %s", alvo["apelido"], sala["nome"])
         await ok(f"{alvo['apelido']} agora está na sala {sala['nome']}.")
 
@@ -949,8 +1081,13 @@ async def manutencao(app):
 
 
 async def ao_iniciar(app):
+    global vapid, sessao_push
     await db.conectar(DATABASE_URL)
     log.info("banco conectado")
+    privada = VAPID_PRIVATE_KEY or await db.config_ou_padrao(
+        "vapid_privada", webpush.Vapid.gerar(VAPID_SUBJECT).privada_b64())
+    vapid = webpush.Vapid.de_privada_b64(privada, VAPID_SUBJECT)
+    sessao_push = aiohttp.ClientSession()
     await db.apagar_expiradas(TTL_HORAS)
     if not SENHA_ADMIN:
         log.warning("ADMIN_PASSWORD não definida: ninguém conseguirá virar admin")
@@ -960,6 +1097,10 @@ async def ao_encerrar(app):
     for info in list(conexoes.values()):
         for ws in list(info["sockets"]):
             await ws.close(code=1001, message=b"servidor reiniciando")
+    if tarefas_push:
+        await asyncio.wait(tarefas_push, timeout=5)
+    if sessao_push:
+        await sessao_push.close()
     await db.fechar()
 
 
@@ -967,6 +1108,12 @@ def criar_app():
     app = web.Application(middlewares=[cabecalhos_seguranca], client_max_size=64 * 1024)
     app.router.add_get("/", pagina)
     app.router.add_get("/health", saude)
+    app.router.add_get("/sw.js", service_worker)
+    app.router.add_get("/manifest.webmanifest", manifesto)
+    app.router.add_static("/icones", PASTA_STATIC / "icones")
+    app.router.add_get("/api/push/chave", push_chave)
+    app.router.add_post("/api/push/inscrever", push_inscrever)
+    app.router.add_post("/api/push/cancelar", push_cancelar)
     app.router.add_post("/api/entrar", entrar)
     app.router.add_post("/api/sair", sair)
     app.router.add_get("/ws", websocket)

@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Sala de Bate-Papo</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a0a12">
+<link rel="apple-touch-icon" href="/icones/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Chat">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E">
 <style>
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -21,6 +27,10 @@ button { font-family: inherit; }
 #menu .ponto { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: #ff5252; }
 #meunome { font-weight: bold; font-size: 15px; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sair { background: none; border: 1px solid #444; color: #aac; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; flex-shrink: 0; }
+#aviso-app { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2a2a55; font-size: 13px; color: #dde; flex-shrink: 0; }
+#aviso-app span { flex: 1; min-width: 0; }
+#aviso-app button { white-space: nowrap; flex-shrink: 0; border: none; border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: bold; cursor: pointer; background: #6a6ad0; color: white; }
+#aviso-app #aviso-fechar { background: none; color: #99a; padding: 4px 6px; font-size: 16px; }
 #corpo { flex: 1; display: flex; overflow: hidden; min-height: 0; position: relative; }
 
 /* Barra lateral */
@@ -163,6 +173,12 @@ button { font-family: inherit; }
   </div>
   <button id="sair" class="escondido">Sair</button>
 </div>
+<div id="aviso-app" class="escondido">
+  <span id="aviso-texto"></span>
+  <button id="btn-notif" class="escondido">🔔 Ativar notificações</button>
+  <button id="btn-instalar" class="escondido">📲 Instalar app</button>
+  <button id="aviso-fechar" aria-label="Fechar">✕</button>
+</div>
 <div id="corpo">
   <div id="veu"></div>
   <div id="sidebar">
@@ -297,6 +313,10 @@ const TRATADORES = {
     salas = new Map(d.salas.map(s => [s.nome, s]));
     const aindaExiste = selecionado === MURAL || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
     selecionar(aindaExiste ? selecionado : MURAL, false);
+    enviarVisibilidade();
+    if (conversaPendente) { abrirChave(conversaPendente); conversaPendente = null; }
+    if (pushSuportado && Notification.permission === "granted") inscreverPush();
+    atualizarAviso();
   },
   erro(d) { adicionarSistema(d.mensagem); },
   sistema(d) { adicionarSistema(d.mensagem); },
@@ -421,6 +441,7 @@ el("sair").onclick = async () => {
   const antigo = ws;
   ws = null;
   if (antigo) antigo.close();
+  await cancelarPush();
   try { await fetch("/api/sair", {method: "POST"}); } catch (e) {}
   meuNome = ""; meuPapel = 0;
   conversas = {}; naoLidas = {}; usuarios = new Map(); contatos = new Set(); salas = new Map();
@@ -428,6 +449,7 @@ el("sair").onclick = async () => {
   definirBloqueio(null);
   renderizarLista();
   renderizarConversa();
+  atualizarAviso();
   mostrarLogin();
 };
 
@@ -651,6 +673,9 @@ function renderizarLista() {
 
   const totalNaoLidas = Object.values(naoLidas).reduce((a, b) => a + b, 0);
   el("menu-ponto").classList.toggle("escondido", !totalNaoLidas);
+  try {
+    if (navigator.setAppBadge) totalNaoLidas ? navigator.setAppBadge(totalNaoLidas) : navigator.clearAppBadge();
+  } catch (e) {}
 }
 
 el("busca").addEventListener("input", renderizarLista);
@@ -674,6 +699,7 @@ function selecionar(chave, fecharMenu = true) {
   renderizarLista();
   renderizarConversa();
   if (fecharMenu) abrirMenu(false);
+  fecharNotificacoes(chave);
   if (!el("texto").disabled && window.innerWidth > 700) el("texto").focus();
 }
 
@@ -705,13 +731,13 @@ function atualizarEntrada() {
   let ativo = conectado();
   let dica = "Mensagem...";
   if (selecionado === MURAL) {
-    dica = meuPapel >= ADMIN ? "Recado para todos..." : "📢 Só Admins escrevem aqui (comandos / funcionam)";
+    dica = meuPapel >= ADMIN ? "Recado para todos..." : "📢 Só Admins escrevem aqui";
   } else if (ehSala(selecionado)) {
     dica = "Mensagem para a sala " + nomeDaChave(selecionado) + "...";
   } else {
     dica = "Mensagem para " + nomeDaChave(selecionado) + "...";
   }
-  if (ativo && bloqueadoAte) dica = "🚫 Envio travado até " + formatarHora(bloqueadoAte) + " (comandos funcionam)";
+  if (ativo && bloqueadoAte) dica = "🚫 Envio travado até " + formatarHora(bloqueadoAte);
   input.disabled = !ativo;
   el("enviar").disabled = !ativo;
   input.placeholder = dica;
@@ -791,6 +817,138 @@ el("texto").addEventListener("keydown", (e) => {
     enviarMensagem();
   }
 });
+
+// ---------------------------------------------------------------
+// App instalável (PWA) e notificações (Web Push)
+// ---------------------------------------------------------------
+const pushSuportado = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const ehIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const instalado = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+let promptInstalar = null;
+let conversaPendente = new URLSearchParams(location.search).get("c");
+if (conversaPendente) history.replaceState(null, "", "/");
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data && e.data.tipo === "abrir") abrirChave(e.data.chave);
+  });
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  promptInstalar = e;
+  atualizarAviso();
+});
+window.addEventListener("appinstalled", () => { promptInstalar = null; atualizarAviso(); });
+
+function enviarVisibilidade() {
+  enviarWs({ tipo: "visibilidade", visivel: document.visibilityState === "visible" });
+}
+document.addEventListener("visibilitychange", () => {
+  enviarVisibilidade();
+  if (document.visibilityState === "visible") fecharNotificacoes(selecionado);
+});
+
+function abrirChave(chave) {
+  if (!meuNome) { conversaPendente = chave; return; }
+  const ok = chave === MURAL
+    || (ehPrivada(chave) && usuarios.has(nomeDaChave(chave)))
+    || (ehSala(chave) && salas.get(nomeDaChave(chave))?.membro);
+  selecionar(ok ? chave : MURAL);
+}
+
+async function fecharNotificacoes(chave) {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) (await reg.getNotifications({ tag: chave })).forEach(n => n.close());
+  } catch (e) {}
+}
+
+function chaveParaBytes(b64) {
+  const pad = "=".repeat((4 - b64.length % 4) % 4);
+  const bruto = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(bruto, c => c.charCodeAt(0));
+}
+
+async function inscreverPush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const { chave } = await (await fetch("/api/push/chave")).json();
+    if (!chave) return;
+    const chaveBytes = chaveParaBytes(chave);
+    let inscricao = await reg.pushManager.getSubscription();
+    // Se o servidor trocou de chave, refaz a inscrição.
+    const atual = inscricao?.options?.applicationServerKey;
+    if (inscricao && atual && new Uint8Array(atual).toString() !== chaveBytes.toString()) {
+      await inscricao.unsubscribe();
+      inscricao = null;
+    }
+    if (!inscricao) inscricao = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chaveBytes });
+    await fetch("/api/push/inscrever", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(inscricao.toJSON()),
+    });
+  } catch (e) {
+    console.warn("push indisponível:", e);
+  }
+}
+
+async function cancelarPush() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const inscricao = reg && await reg.pushManager.getSubscription();
+    if (inscricao) {
+      await fetch("/api/push/cancelar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: inscricao.endpoint }),
+      });
+    }
+  } catch (e) {}
+}
+
+function avisoDispensado() {
+  try { return localStorage.getItem("chat_aviso_app") === "fechado"; } catch (e) { return false; }
+}
+
+function atualizarAviso() {
+  const precisaNotif = pushSuportado && Notification.permission === "default";
+  const dicaIOS = ehIOS && !instalado && !pushSuportado;
+  const podeInstalar = !!promptInstalar;
+  let texto = "";
+  if (precisaNotif) texto = "🔔 Receba um aviso quando chegar mensagem, mesmo com o chat fechado.";
+  else if (dicaIOS) texto = "📲 No iPhone, toque em Compartilhar ⬆️ e depois em “Adicionar à Tela de Início” para instalar o app e receber notificações.";
+  else if (podeInstalar) texto = "📲 Instale o chat como app no seu aparelho.";
+  const mostrar = !!meuNome && !!texto && !avisoDispensado();
+  el("aviso-app").classList.toggle("escondido", !mostrar);
+  el("aviso-texto").textContent = texto;
+  el("btn-notif").classList.toggle("escondido", !precisaNotif);
+  el("btn-instalar").classList.toggle("escondido", !podeInstalar);
+}
+
+el("btn-notif").onclick = async () => {
+  const permissao = await Notification.requestPermission();
+  if (permissao === "granted") {
+    await inscreverPush();
+    adicionarSistema("🔔 Notificações ativadas neste aparelho.");
+  } else if (permissao === "denied") {
+    adicionarSistema("🔕 Notificações bloqueadas. Para ativar, libere nas configurações do navegador para este site.");
+  }
+  atualizarAviso();
+};
+el("btn-instalar").onclick = async () => {
+  if (!promptInstalar) return;
+  promptInstalar.prompt();
+  await promptInstalar.userChoice.catch(() => {});
+  promptInstalar = null;
+  atualizarAviso();
+};
+el("aviso-fechar").onclick = () => {
+  try { localStorage.setItem("chat_aviso_app", "fechado"); } catch (e) {}
+  atualizarAviso();
+};
 
 renderizarLista();
 conectar();

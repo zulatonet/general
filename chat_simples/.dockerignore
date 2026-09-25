@@ -2,4 +2,5 @@
 !requirements.txt
 !chat.py
 !db.py
+!webpush.py
 !static/

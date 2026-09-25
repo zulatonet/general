@@ -2,7 +2,8 @@
 
 Chat em tempo real com **Mural de Recados** (só Admins escrevem), conversas
 **privadas** e **salas com senha** que expiram em 24h, contatos fixados, busca,
-anti-flood e comandos de admin. Versão para rodar em container (Easypanel),
+anti-flood e comandos de admin. Pode ser **instalado como app** (PWA) e manda
+**notificações** com o app fechado. Versão para rodar em container (Easypanel),
 com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 (Supabase, Neon etc.).
 
@@ -21,6 +22,9 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `POST /api/entrar` | Login — cria a conta se o nome ainda não existir |
 | `POST /api/sair` | Encerra a sessão |
 | `GET /health` | Healthcheck (testa o banco) |
+| `GET /manifest.webmanifest`, `GET /sw.js`, `/icones/*` | App instalável (PWA) e service worker |
+| `GET /api/push/chave` | Chave pública VAPID |
+| `POST /api/push/inscrever` / `POST /api/push/cancelar` | Liga/desliga as notificações do aparelho |
 
 ## Variáveis de ambiente
 
@@ -33,6 +37,8 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `SESSION_DAYS` | não | `30` | Validade da sessão (cookie) |
 | `PRIVATE_TTL_HOURS` | não | `24` | Horas até mensagens privadas e de salas serem apagadas |
 | `TIMEZONE` | não | `America/Sao_Paulo` | Fuso usado para contar os avisos de flood "do dia" |
+| `VAPID_PRIVATE_KEY` | não | gerada | Chave do push. Se vazia, o chat gera uma e guarda no banco (tabela `config`) |
+| `VAPID_SUBJECT` | não | `mailto:admin@example.com` | Contato enviado aos serviços de push. Use um e-mail seu (`mailto:...`) |
 | `LOG_LEVEL` | não | `INFO` | Nível de log (saída no stdout) |
 
 Veja `.env.example`.
@@ -88,6 +94,40 @@ python chat.py        # http://localhost:8080
 - Senha: mínimo 6 caracteres, guardada com hash `scrypt`.
 - A sessão fica num cookie `HttpOnly` válido por `SESSION_DAYS` dias.
 - Esqueceu a senha? O admin redefine com `/senha Usuario NovaSenha`.
+
+## App e notificações (PWA + Web Push)
+
+O chat funciona como app instalável, sem loja: ícone na tela inicial, tela
+cheia e **notificação com som** (o som padrão do aparelho) quando chega
+mensagem, mesmo com o app fechado.
+
+**Android (Chrome):**
+1. Abra o chat no Chrome e entre na conta.
+2. Toque em **🔔 Ativar notificações** no aviso do topo e permita.
+3. Toque em **📲 Instalar app** (ou no menu ⋮ → *Instalar app*).
+
+**iPhone (iOS 16.4 ou mais novo):**
+1. Abra o chat no **Safari**, toque em **Compartilhar ⬆️** → **Adicionar à Tela de Início**.
+2. Abra o chat pelo ícone novo, entre e toque em **🔔 Ativar notificações**.
+
+> No iPhone, notificação só funciona com o app adicionado à tela inicial
+> (limitação da Apple).
+
+**Quando chega notificação:**
+- Mensagem privada, mensagem de sala (para os membros), recado no Mural e
+  quando alguém coloca você numa sala.
+- Só para quem **não** está com o chat aberto na tela. Com o chat aberto, toca
+  o som dentro da página.
+- Várias mensagens da mesma conversa viram uma notificação só, com contador.
+- Tocar na notificação abre direto a conversa.
+- Ao sair da conta, o aparelho para de receber as notificações dela.
+
+**Como funciona:** o servidor manda o push para o serviço do navegador
+(Google, Mozilla ou Apple), que entrega no aparelho. O conteúdo vai
+criptografado de ponta a ponta (RFC 8291) e o servidor se identifica com
+VAPID (RFC 8292), implementados em `webpush.py`. Não precisa de Firebase nem
+de conta em nenhum serviço. Por segurança, o servidor só envia para os
+endereços oficiais desses serviços.
 
 ## Regras do chat
 
@@ -186,6 +226,8 @@ comandos que a pessoa pode usar.
 - `salas` (id, nome, senha_hash, dono_id, criado_em)
 - `sala_membros` (sala_id, usuario_id, entrou_em)
 - `contatos` (usuario_id, contato_id): pessoas fixadas
+- `push_inscricoes` (endpoint, usuario_id, p256dh, auth, criado_em): aparelhos com notificação ligada
+- `config` (chave, valor): configurações geradas pelo chat (ex.: chave VAPID)
 - `mensagens` (id, remetente_id, destinatario_id, sala_id, texto, enviado_em, lida)
   - Mural: `destinatario_id` e `sala_id` nulos (não expira)
   - Privada: `destinatario_id` preenchido (expira)
