@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Sala de Bate-Papo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E">
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  background: #1e1e2f; color: #eee;
+  display: flex; flex-direction: column;
+  font-size: 16px;
+}
+#topo { padding: 10px 12px; background: #0a0a12; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+#meunome { font-weight: bold; font-size: 15px; display: flex; align-items: center; gap: 6px; }
+#sair { background: none; border: 1px solid #444; color: #aac; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+#corpo { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+#sidebar { width: 150px; background: #14141f; padding: 8px; overflow-y: auto; flex-shrink: 0; }
+#sidebar h3 { margin: 0 0 8px 0; font-size: 13px; color: #888; text-transform: uppercase; }
+.usuario { padding: 10px 8px; cursor: pointer; border-radius: 8px; margin-bottom: 4px; font-size: 14px; word-break: break-word; line-height: 1.2; user-select: none; display: flex; align-items: center; gap: 6px; }
+.usuario:active { background: #2a2a3f; }
+.usuario.selecionado { background: #4a4a8f; }
+.usuario.geral { background: #2a5a3f; }
+.usuario.geral.selecionado { background: #3a8a5f; }
+.bolinha { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.bolinha.online { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+.bolinha.offline { background: #f44336; }
+.bolinha.conectando { background: #ffb300; }
+.badge-nao-lidas { background: #ff5252; color: white; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 1px 6px; margin-left: auto; }
+#chat { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#chat-titulo { padding: 8px 12px; background: #0a0a12; font-size: 14px; color: #aac; border-bottom: 1px solid #222; flex-shrink: 0; }
+#mensagens { flex: 1; padding: 12px; overflow-y: auto; }
+.msg { margin-bottom: 8px; padding: 10px 14px; border-radius: 12px; max-width: 85%; font-size: 16px; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
+.msg.enviada { background: #4a4a8f; margin-left: auto; }
+.msg.recebida { background: #2a2a3f; }
+.msg.sistema { background: #333; color: #aaa; font-size: 13px; text-align: center; margin: 8px auto; max-width: 100%; }
+.msg.confirmacao { background: #2a5a3f; color: #cfc; font-size: 13px; text-align: left; margin: 8px auto; max-width: 100%; font-family: monospace; }
+.msg .nome { font-weight: bold; font-size: 13px; color: #aac; margin-bottom: 2px; }
+.msg .hora { font-size: 11px; color: #999; margin-top: 4px; }
+#form { display: flex; padding: 8px; background: #14141f; gap: 6px; flex-shrink: 0; }
+#texto { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; font-size: 16px; background: #1e1e2f; color: #eee; min-width: 0; }
+#texto:disabled { opacity: 0.5; }
+#enviar { padding: 12px 16px; border: none; border-radius: 8px; background: #4a4a8f; color: white; cursor: pointer; font-size: 16px; font-weight: bold; }
+#enviar:disabled { opacity: 0.5; }
+#modal-nome {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+#modal-nome .caixa {
+  background: #2a2a3f; padding: 30px; border-radius: 16px; max-width: 90%;
+  width: 400px; text-align: center;
+}
+#modal-nome h2 { margin: 0 0 8px 0; font-size: 20px; }
+#modal-nome .dica { color: #99a; font-size: 13px; margin-bottom: 16px; }
+#modal-nome input {
+  width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #444;
+  font-size: 16px; background: #1e1e2f; color: #eee; margin-bottom: 12px;
+}
+#modal-nome button {
+  width: 100%; padding: 12px; border: none; border-radius: 8px;
+  background: #4a4a8f; color: white; font-size: 16px; font-weight: bold; cursor: pointer;
+}
+#modal-nome button:disabled { opacity: 0.5; }
+#modal-nome .erro { color: #ff6b6b; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+.escondido { display: none !important; }
+</style>
+</head>
+<body>
+<div id="modal-nome" class="escondido">
+  <form class="caixa" id="modal-form">
+    <h2>Entrar no chat</h2>
+    <div class="dica">Primeira vez? Escolha um nome e uma senha — a conta é criada na hora.</div>
+    <div class="erro" id="modal-erro"></div>
+    <input id="modal-input" placeholder="Seu nome" maxlength="20" autocomplete="username" autocapitalize="off">
+    <input id="modal-senha" type="password" placeholder="Senha (mínimo 6 caracteres)" maxlength="128" autocomplete="current-password">
+    <button id="modal-btn" type="submit">Entrar</button>
+  </form>
+</div>
+
+<div id="topo">
+<div id="meunome"><span id="status" class="bolinha conectando"></span><span id="nome-texto">Conectando...</span></div>
+<button id="sair" class="escondido">Sair</button>
+</div>
+<div id="corpo">
+<div id="sidebar">
+<h3>Usuários</h3>
+<div id="lista"></div>
+</div>
+<div id="chat">
+<div id="chat-titulo">📢 Geral</div>
+<div id="mensagens"></div>
+<div id="form">
+<input id="texto" placeholder="Mensagem para todos..." disabled autocomplete="off" maxlength="2000">
+<button id="enviar" disabled>Enviar</button>
+</div>
+</div>
+</div>
+<script>
+// Limpa dados da versão antiga (identificação por device_id)
+try { localStorage.removeItem("chat_device_id"); localStorage.removeItem("chat_nome"); } catch (e) {}
+
+let ws = null;
+let meuNome = "";
+let selecionado = "GERAL";
+let conversas = { "GERAL": [] };
+let naoLidas = {};
+let ultimosUsuarios = [];
+let tentativas = 0;
+let timerReconexao = null;
+
+const el = (id) => document.getElementById(id);
+
+function definirStatus(estado, texto) {
+  el("status").className = "bolinha " + estado;
+  el("nome-texto").textContent = texto;
+}
+
+function habilitarEnvio(ativo) {
+  el("texto").disabled = !ativo;
+  el("enviar").disabled = !ativo;
+}
+
+function mostrarLogin(erro) {
+  el("modal-erro").textContent = erro || "";
+  el("modal-nome").classList.remove("escondido");
+  el("sair").classList.add("escondido");
+  definirStatus("offline", "Desconectado");
+  habilitarEnvio(false);
+  el("modal-input").focus();
+}
+
+function conectar() {
+  clearTimeout(timerReconexao);
+  const protocolo = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(protocolo + "//" + location.host + "/ws");
+  definirStatus("conectando", "Conectando...");
+
+  ws.onmessage = (event) => {
+    const dados = JSON.parse(event.data);
+    if (dados.tipo === "bemvindo") {
+      tentativas = 0;
+      meuNome = dados.nome;
+      definirStatus("online", "Você é: " + meuNome);
+      el("modal-nome").classList.add("escondido");
+      el("sair").classList.remove("escondido");
+      conversas = { "GERAL": [] };
+      naoLidas = {};
+      conversas["GERAL"] = dados.historico.geral.map(m => ({
+        remetente: m.remetente, texto: m.texto, hora: m.hora,
+        classe: m.remetente === meuNome ? "enviada" : "recebida"
+      }));
+      for (const [interlocutor, msgs] of Object.entries(dados.historico.privadas || {})) {
+        conversas[interlocutor] = msgs.map(m => ({
+          remetente: m.remetente, texto: m.texto, hora: m.hora,
+          classe: m.remetente === meuNome ? "enviada" : "recebida"
+        }));
+      }
+      for (const [interlocutor, qtd] of Object.entries(dados.nao_lidas || {})) {
+        naoLidas[interlocutor] = qtd;
+      }
+      selecionar(conversas[selecionado] || selecionado === "GERAL" ? selecionado : "GERAL");
+    } else if (dados.tipo === "erro") {
+      adicionarSistema(dados.mensagem);
+    } else if (dados.tipo === "usuarios") {
+      renderizarUsuarios(dados.usuarios);
+    } else if (dados.tipo === "msg") {
+      const interlocutor = dados.privado ? dados.de : "GERAL";
+      if (!conversas[interlocutor]) conversas[interlocutor] = [];
+      conversas[interlocutor].push({
+        remetente: dados.de, texto: dados.texto, hora: dados.hora,
+        classe: dados.de === meuNome ? "enviada" : "recebida"
+      });
+      if (selecionado === interlocutor) {
+        renderizarConversa();
+        if (dados.privado) ws.send(JSON.stringify({tipo: "marcar_lidas", interlocutor: interlocutor}));
+      } else if (dados.privado) {
+        naoLidas[interlocutor] = (naoLidas[interlocutor] || 0) + 1;
+        tocarSom();
+        renderizarUsuarios();
+      }
+    } else if (dados.tipo === "msg_enviada") {
+      const interlocutor = dados.para;
+      if (!conversas[interlocutor]) conversas[interlocutor] = [];
+      conversas[interlocutor].push({ remetente: meuNome, texto: dados.texto, hora: dados.hora, classe: "enviada" });
+      if (selecionado === interlocutor) renderizarConversa();
+    } else if (dados.tipo === "renomeado") {
+      renomear(dados.de, dados.para);
+    } else if (dados.tipo === "apagado") {
+      aplicarApagado(dados);
+    } else if (dados.tipo === "sistema") {
+      adicionarSistema(dados.mensagem);
+    } else if (dados.tipo === "comando_ok") {
+      adicionarConfirmacao(dados.mensagem);
+    }
+  };
+
+  ws.onclose = (event) => {
+    habilitarEnvio(false);
+    if (event.code === 4001) {
+      ws = null;
+      mostrarLogin(meuNome ? "Sua sessão foi encerrada. Entre novamente." : "");
+      meuNome = "";
+      return;
+    }
+    if (!ws) return;  // saída manual
+    tentativas++;
+    const espera = Math.min(30000, 1000 * 2 ** Math.min(tentativas, 5));
+    definirStatus("conectando", "Reconectando...");
+    timerReconexao = setTimeout(conectar, espera);
+  };
+}
+
+el("modal-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const apelido = el("modal-input").value.trim();
+  const senha = el("modal-senha").value;
+  if (!apelido || !senha) {
+    el("modal-erro").textContent = "Preencha nome e senha.";
+    return;
+  }
+  el("modal-btn").disabled = true;
+  el("modal-erro").textContent = "";
+  try {
+    const resp = await fetch("/api/entrar", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({apelido, senha}),
+    });
+    const dados = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      el("modal-erro").textContent = dados.erro || "Não foi possível entrar.";
+      return;
+    }
+    el("modal-senha").value = "";
+    conectar();
+  } catch (err) {
+    el("modal-erro").textContent = "Sem conexão com o servidor.";
+  } finally {
+    el("modal-btn").disabled = false;
+  }
+};
+
+el("sair").onclick = async () => {
+  const antigo = ws;
+  ws = null;
+  if (antigo) antigo.close();
+  try { await fetch("/api/sair", {method: "POST"}); } catch (e) {}
+  meuNome = "";
+  conversas = { "GERAL": [] };
+  naoLidas = {};
+  ultimosUsuarios = [];
+  selecionado = "GERAL";
+  renderizarUsuarios();
+  renderizarConversa();
+  mostrarLogin();
+};
+
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function tocarSom() {
+  try {
+    if (!audioCtx) audioCtx = new AudioCtx();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine"; osc.frequency.value = 880; gain.gain.value = 0.2;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+  } catch (e) {}
+}
+
+function adicionarSistema(texto) {
+  if (!conversas[selecionado]) conversas[selecionado] = [];
+  conversas[selecionado].push({ remetente: "", texto: texto, hora: "", classe: "sistema" });
+  renderizarConversa();
+}
+
+function adicionarConfirmacao(texto) {
+  if (!conversas[selecionado]) conversas[selecionado] = [];
+  conversas[selecionado].push({ remetente: "", texto: texto, hora: "", classe: "confirmacao" });
+  renderizarConversa();
+}
+
+function renomear(de, para) {
+  if (meuNome === de) {
+    meuNome = para;
+    definirStatus("online", "Você é: " + meuNome);
+  }
+  if (conversas[de]) {
+    conversas[para] = (conversas[para] || []).concat(conversas[de]);
+    delete conversas[de];
+  }
+  if (naoLidas[de]) { naoLidas[para] = naoLidas[de]; delete naoLidas[de]; }
+  for (const msgs of Object.values(conversas)) {
+    msgs.forEach(m => { if (m.remetente === de) m.remetente = para; });
+  }
+  if (selecionado === de) selecionar(para); else renderizarConversa();
+}
+
+function aplicarApagado(dados) {
+  if (dados.escopo === "geral") {
+    conversas["GERAL"] = [];
+  } else if (dados.escopo === "privada") {
+    conversas[dados.com] = [];
+    delete naoLidas[dados.com];
+  } else if (dados.escopo === "total") {
+    for (const k of Object.keys(conversas)) conversas[k] = [];
+    naoLidas = {};
+  } else if (dados.escopo === "usuario") {
+    for (const k of Object.keys(conversas)) {
+      conversas[k] = conversas[k].filter(m => m.remetente !== dados.usuario);
+    }
+    delete naoLidas[dados.usuario];
+  }
+  renderizarUsuarios();
+  renderizarConversa();
+}
+
+function renderizarUsuarios(usuarios) {
+  if (usuarios) ultimosUsuarios = usuarios;
+  const lista = el("lista");
+  lista.innerHTML = "";
+  const divGeral = document.createElement("div");
+  divGeral.className = "usuario geral" + (selecionado === "GERAL" ? " selecionado" : "");
+  divGeral.innerHTML = '<span>📢</span><span>Geral</span>';
+  divGeral.onclick = () => selecionar("GERAL");
+  lista.appendChild(divGeral);
+  const ordenados = [...ultimosUsuarios].sort((a, b) => {
+    if (a.online !== b.online) return a.online ? -1 : 1;
+    return a.apelido.localeCompare(b.apelido);
+  });
+  ordenados.filter(u => u.apelido !== meuNome).forEach(u => {
+    const div = document.createElement("div");
+    div.className = "usuario" + (u.apelido === selecionado ? " selecionado" : "");
+    const bolinha = document.createElement("span");
+    bolinha.className = "bolinha " + (u.online ? "online" : "offline");
+    const nomeSpan = document.createElement("span");
+    nomeSpan.textContent = u.apelido;
+    div.appendChild(bolinha); div.appendChild(nomeSpan);
+    if (naoLidas[u.apelido]) {
+      const badge = document.createElement("span");
+      badge.className = "badge-nao-lidas";
+      badge.textContent = naoLidas[u.apelido];
+      div.appendChild(badge);
+    }
+    div.onclick = () => selecionar(u.apelido);
+    lista.appendChild(div);
+  });
+}
+
+function selecionar(nome) {
+  selecionado = nome;
+  delete naoLidas[nome];
+  el("chat-titulo").textContent = nome === "GERAL" ? "📢 Geral" : "👤 " + nome;
+  el("texto").placeholder = nome === "GERAL" ? "Mensagem para todos..." : "Mensagem para " + nome + "...";
+  const conectado = ws && ws.readyState === WebSocket.OPEN;
+  habilitarEnvio(conectado);
+  if (nome !== "GERAL" && conectado) {
+    ws.send(JSON.stringify({tipo: "marcar_lidas", interlocutor: nome}));
+  }
+  renderizarUsuarios();
+  renderizarConversa();
+  if (conectado) el("texto").focus();
+}
+
+function formatarHora(hora) {
+  const d = new Date(hora);
+  if (isNaN(d)) return "";
+  const hoje = new Date();
+  const hm = d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+  return d.toDateString() === hoje.toDateString() ? hm : d.toLocaleDateString([], {day: "2-digit", month: "2-digit"}) + " " + hm;
+}
+
+function renderizarConversa() {
+  const container = el("mensagens");
+  container.innerHTML = "";
+  const msgs = conversas[selecionado] || [];
+  msgs.forEach(m => adicionarMensagemAoContainer(container, m.remetente, m.texto, m.classe, m.hora));
+  container.scrollTop = container.scrollHeight;
+}
+
+function adicionarMensagemAoContainer(container, remetente, texto, classe, hora) {
+  const div = document.createElement("div");
+  div.className = "msg " + classe;
+  if (remetente) {
+    const n = document.createElement("div");
+    n.className = "nome"; n.textContent = remetente;
+    div.appendChild(n);
+  }
+  const c = document.createElement("div"); c.textContent = texto;
+  div.appendChild(c);
+  if (hora) {
+    const h = document.createElement("div");
+    h.className = "hora"; h.textContent = formatarHora(hora);
+    div.appendChild(h);
+  }
+  container.appendChild(div);
+}
+
+function enviarMensagem() {
+  const input = el("texto");
+  if (input.value.trim() && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({para: selecionado === "GERAL" ? null : selecionado, texto: input.value}));
+    input.value = "";
+    input.focus();
+  }
+}
+
+el("enviar").onclick = enviarMensagem;
+el("texto").addEventListener("keydown", (e) => { if (e.key === "Enter") enviarMensagem(); });
+
+renderizarUsuarios();
+conectar();
+</script>
+</body>
+</html>
