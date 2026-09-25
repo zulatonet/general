@@ -100,6 +100,28 @@ CREATE TABLE IF NOT EXISTS audios (
 );
 CREATE INDEX IF NOT EXISTS idx_audios_mensagem ON audios (mensagem_id);
 
+-- Tela de Pixels: a imagem inteira fica numa linha (1 byte por pixel = índice
+-- da paleta). O histórico guarda quem pintou o quê (para "quem pintou" e para
+-- a moderação desfazer vandalismo); é limpo após 30 dias.
+CREATE TABLE IF NOT EXISTS tela (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    largura       INTEGER NOT NULL,
+    altura        INTEGER NOT NULL,
+    pixels        BYTEA NOT NULL,
+    atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS tela_log (
+    id         BIGSERIAL PRIMARY KEY,
+    x          SMALLINT NOT NULL,
+    y          SMALLINT NOT NULL,
+    cor        SMALLINT NOT NULL,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_tela_log_pixel ON tela_log (x, y, id DESC);
+CREATE INDEX IF NOT EXISTS idx_tela_log_usuario ON tela_log (usuario_id, criado_em);
+CREATE INDEX IF NOT EXISTS idx_tela_log_data ON tela_log (criado_em);
+
 -- Configurações geradas pelo próprio chat (ex.: chaves VAPID do push).
 CREATE TABLE IF NOT EXISTS config (
     chave TEXT PRIMARY KEY,
@@ -126,6 +148,8 @@ ALTER TABLE contatos     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mensagens    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audios       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tela         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tela_log     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE push_inscricoes ENABLE ROW LEVEL SECURITY;
 """
 
@@ -615,3 +639,59 @@ async def consumir_audio(audio_id):
         if row:
             await conn.execute("UPDATE mensagens SET audio_ouvido = TRUE WHERE audio_id = $1", audio_id)
         return row
+
+
+# ---------------------------------------------------------------
+# Tela de Pixels
+# ---------------------------------------------------------------
+async def carregar_tela():
+    return await pool.fetchrow("SELECT largura, altura, pixels FROM tela WHERE id = 1")
+
+
+async def salvar_tela(largura, altura, pixels):
+    await pool.execute(
+        """INSERT INTO tela (id, largura, altura, pixels) VALUES (1, $1, $2, $3)
+           ON CONFLICT (id) DO UPDATE SET largura = $1, altura = $2, pixels = $3, atualizado_em = now()""",
+        largura, altura, bytes(pixels),
+    )
+
+
+async def registrar_pixels(alteracoes):
+    """alteracoes = [(x, y, cor, usuario_id), ...] — gravadas numa única consulta."""
+    if not alteracoes:
+        return
+    xs, ys, cores, usuarios = zip(*alteracoes)
+    await pool.execute(
+        """INSERT INTO tela_log (x, y, cor, usuario_id)
+           SELECT * FROM unnest($1::smallint[], $2::smallint[], $3::smallint[], $4::int[])""",
+        list(xs), list(ys), list(cores), list(usuarios),
+    )
+
+
+async def quem_pintou(x, y):
+    return await pool.fetchrow(
+        """SELECT u.apelido, l.criado_em FROM tela_log l JOIN usuarios u ON u.id = l.usuario_id
+           WHERE l.x = $1 AND l.y = $2 ORDER BY l.id DESC LIMIT 1""",
+        x, y,
+    )
+
+
+async def pixels_para_desfazer(usuario_id, minutos):
+    """Pixels cuja última pintura é do usuário (nos últimos `minutos`), com a cor de antes dele.
+
+    `anterior` é NULL quando ninguém mais pintou ali (volta ao desenho inicial).
+    """
+    return await pool.fetch(
+        """SELECT c.x, c.y,
+                  (SELECT l.cor FROM tela_log l WHERE l.x = c.x AND l.y = c.y AND l.usuario_id <> $1
+                   ORDER BY l.id DESC LIMIT 1) AS anterior
+           FROM (SELECT DISTINCT x, y FROM tela_log
+                 WHERE usuario_id = $1 AND criado_em > now() - make_interval(mins => $2)) c
+           WHERE (SELECT l.usuario_id FROM tela_log l WHERE l.x = c.x AND l.y = c.y
+                  ORDER BY l.id DESC LIMIT 1) = $1""",
+        usuario_id, minutos,
+    )
+
+
+async def limpar_log_tela(dias=30):
+    await pool.execute("DELETE FROM tela_log WHERE criado_em < now() - make_interval(days => $1)", dias)

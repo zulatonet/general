@@ -30,6 +30,7 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `POST /api/push/inscrever` / `POST /api/push/cancelar` | Liga/desliga as notificações do aparelho |
 | `POST /api/audio?para=Nome&duracao=ms` | Envia áudio (sem `para` = Mural, só Admins) |
 | `GET /api/audio/{id}` | Toca o áudio (privado: só quem recebeu, uma vez) |
+| `GET /api/tela` | Imagem da Tela de Pixels (1 byte por pixel, comprimida) |
 
 ## Variáveis de ambiente
 
@@ -154,6 +155,29 @@ VAPID (RFC 8292), implementados em `webpush.py`. Não precisa de Firebase nem
 de conta em nenhum serviço. Por segurança, o servidor só envia para os
 endereços oficiais desses serviços.
 
+## Tela de Pixels 🎨
+
+É a **página inicial** do chat: uma tela coletiva de **320×180 pixels** onde
+todo mundo pinta junto, com paleta de 16 cores.
+
+- **1 pixel a cada 10 segundos por usuário.** Ninguém é dono de pixel: qualquer
+  um pinta por cima.
+- **Toque/clique** num pixel para escolher (aproxima sozinho se estiver
+  pequeno), escolha a cor e aperte **Pintar**. Pintar em dois passos evita
+  pintar sem querer enquanto arrasta.
+- **Navegação:** arraste para mover; **pinça** (celular), **roda do mouse** ou
+  botões ＋ － para zoom; ⤢ mostra a tela inteira.
+- Ao escolher um pixel aparece **quem pintou e quando**.
+- As mudanças chegam para todos em tempo real, em lotes a cada 0,25 s.
+- Embaixo da tela aparece o **último recado do Mural** (toque para abrir o Mural).
+- Desenho inicial: "PREENCHA SEUS PIXELS / A CADA 10 SEGUNDOS".
+- **Moderação (Admins):** `/tela desfazer Nome [minutos]` volta os pixels de um
+  vândalo para as cores de antes; `/tela apagar X Y Largura Altura` pinta de
+  branco uma área.
+- **Como é guardada:** a imagem inteira (1 byte por pixel, 57,6 KB) fica em
+  memória e é salva no banco a cada 5 s e ao desligar. O histórico de quem
+  pintou o quê fica 30 dias.
+
 ## Regras do chat
 
 ### Mural de Recados
@@ -236,6 +260,8 @@ comandos que a pessoa pode usar.
 | `/nome Usuario NovoNome` | Admin | Troca o nome de Usuario, mantendo o histórico |
 | `/senha Usuario NovaSenha` | Admin | Redefine a senha e derruba as sessões dele |
 | `/liberar Usuario` | Admin | Destrava quem foi bloqueado por flood |
+| `/tela desfazer Usuario [minutos]` | Admin | Desfaz os pixels de Usuario (padrão: última 1 h) |
+| `/tela apagar X Y Largura Altura` | Admin | Pinta de branco uma área da Tela de Pixels |
 | `/apagar` | Admin | Apaga a conversa aberta (Mural ou privada) |
 | `/apagar Usuario` | Admin | Apaga todas as mensagens de Usuario |
 | `/apagar total` | Master | Apaga todas as mensagens (mantém usuários) |
@@ -299,6 +325,8 @@ comandos que a pessoa pode usar.
 - `contatos` (usuario_id, contato_id): pessoas fixadas
 - `push_inscricoes` (endpoint, usuario_id, p256dh, auth, criado_em): aparelhos com notificação ligada
 - `audios` (id, mensagem_id, mime, dados): arquivos de áudio, apagados junto com a mensagem
+- `tela` (id=1, largura, altura, pixels): a Tela de Pixels inteira
+- `tela_log` (x, y, cor, usuario_id, criado_em): histórico de pinturas (30 dias)
 - `config` (chave, valor): configurações geradas pelo chat (ex.: chave VAPID)
 - `mensagens` (id, remetente_id, destinatario_id, sala_id, texto, enviado_em, lida,
   audio_id, audio_duracao_ms, audio_unico, audio_ouvido)

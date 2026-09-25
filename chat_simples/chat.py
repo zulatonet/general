@@ -17,6 +17,7 @@ import aiohttp
 from aiohttp import WSMsgType, web
 
 import db
+import tela as tela_mod
 import webpush
 
 # ---------------------------------------------------------------
@@ -108,6 +109,12 @@ HELP_ADMIN = HELP_USUARIO + """
 
 /liberar Usuario
   Destrava o envio de quem foi bloqueado por flood.
+
+/tela desfazer Usuario [minutos]
+  Desfaz os pixels que Usuario pintou (padrão: última 1 hora).
+
+/tela apagar X Y Largura Altura
+  Pinta de branco uma área da Tela de Pixels.
 
 /apagar
   Apaga o histórico da conversa aberta (Mural, privada ou sala).
@@ -468,6 +475,54 @@ async def colocar_na_sala(sala, usuario_id, apelido):
 
 
 # ---------------------------------------------------------------
+# Tela de Pixels
+# ---------------------------------------------------------------
+tela_pixels = tela_mod.Tela()
+
+
+def info_tela(usuario_id):
+    return {
+        "largura": tela_mod.LARGURA, "altura": tela_mod.ALTURA, "paleta": tela_mod.PALETA,
+        "espera_s": tela_mod.ESPERA_S, "espera_restante": round(tela_pixels.espera_restante(usuario_id), 1),
+    }
+
+
+async def tela_imagem(request):
+    """A tela inteira: 1 byte por pixel (índice da paleta), comprimida."""
+    if not await usuario_da_requisicao(request):
+        return web.json_response({"erro": "Não autenticado."}, status=401)
+    resposta = web.Response(body=bytes(tela_pixels.pixels), content_type="application/octet-stream",
+                            headers={"Cache-Control": "no-store"})
+    resposta.enable_compression()
+    return resposta
+
+
+async def tratar_pixel(ws, usuario_id, dados):
+    x, y, cor = dados.get("x"), dados.get("y"), dados.get("cor")
+    if not tela_mod.Tela.valido(x, y, cor):
+        return
+    info = conexoes[usuario_id]
+    if info.get("bloqueado_ate") and info["bloqueado_ate"] > datetime.now(timezone.utc):
+        await enviar(ws, {"tipo": "pixel_espera", "espera": (info["bloqueado_ate"] - datetime.now(timezone.utc)).total_seconds(),
+                          "mensagem": "🚫 Você está travado por flood e não pode pintar agora."})
+        return
+    restante = tela_pixels.pintar(usuario_id, x, y, cor)
+    if restante:
+        await enviar(ws, {"tipo": "pixel_espera", "espera": round(restante, 1)})
+    else:
+        await enviar_para_usuario(usuario_id, {"tipo": "pixel_ok", "espera": tela_mod.ESPERA_S})
+
+
+async def tratar_pixel_info(ws, dados):
+    x, y = dados.get("x"), dados.get("y")
+    if not tela_mod.Tela.valido(x, y, 0):
+        return
+    row = await db.quem_pintou(x, y)
+    await enviar(ws, {"tipo": "pixel_info", "x": x, "y": y,
+                      "apelido": row["apelido"] if row else None, "quando": iso(row["criado_em"]) if row else None})
+
+
+# ---------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------
 @web.middleware
@@ -699,6 +754,7 @@ async def websocket(request):
             "usuarios": [{"apelido": u["apelido"], "online": u["id"] in conexoes} for u in usuarios],
             "contatos": await db.listar_contatos(usuario_id),
             "salas": [dict(s) for s in await db.listar_salas(usuario_id)],
+            "tela": info_tela(usuario_id),
         })
         if primeira_conexao:
             await transmitir({"tipo": "presenca", "apelido": info["apelido"], "online": True})
@@ -791,6 +847,14 @@ async def tratar_mensagem(ws, usuario_id, dados):
             if alvo and alvo["id"] != usuario_id:
                 await db.fixar_contato(usuario_id, alvo["id"], fixo)
                 await enviar_para_usuario(usuario_id, {"tipo": "contatos", "contatos": await db.listar_contatos(usuario_id)})
+        return
+
+    if tipo == "pixel":
+        await tratar_pixel(ws, usuario_id, dados)
+        return
+
+    if tipo == "pixel_info":
+        await tratar_pixel_info(ws, dados)
         return
 
     if tipo == "criar_sala":
@@ -1179,6 +1243,40 @@ async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
                 await desconectar_usuario(alvo["id"])
             await ok(f"Senha de {alvo['apelido']} redefinida. As sessões dele foram encerradas.")
 
+    elif cmd == "/tela":
+        partes_tela = texto.split()
+        sub = partes_tela[1].lower() if len(partes_tela) >= 2 else ""
+        if sub == "desfazer" and len(partes_tela) >= 3:
+            alvo = await buscar_alvo(partes_tela[2])
+            if not alvo:
+                return
+            try:
+                minutos = max(1, min(int(partes_tela[3]), 30 * 24 * 60)) if len(partes_tela) >= 4 else 60
+            except ValueError:
+                await ok("Uso: /tela desfazer Usuario [minutos]")
+                return
+            await tela_pixels.descarregar(transmitir)  # garante que o histórico está gravado
+            linhas = await db.pixels_para_desfazer(alvo["id"], minutos)
+            alteracoes = [(r["x"], r["y"], r["anterior"] if r["anterior"] is not None
+                           else tela_mod.INICIAL[r["y"] * tela_mod.LARGURA + r["x"]]) for r in linhas]
+            tela_pixels.aplicar(alteracoes, usuario_id)
+            log.info("tela: %d pixels de %s desfeitos por %s", len(alteracoes), alvo["apelido"], conexoes[usuario_id]["apelido"])
+            await ok(f"🎨 {len(alteracoes)} pixels de {alvo['apelido']} desfeitos (últimos {minutos} min).")
+        elif sub == "apagar" and len(partes_tela) == 6:
+            try:
+                x, y, larg, alt = (int(v) for v in partes_tela[2:6])
+            except ValueError:
+                await ok("Uso: /tela apagar X Y Largura Altura")
+                return
+            x2, y2 = min(tela_mod.LARGURA, x + larg), min(tela_mod.ALTURA, y + alt)
+            x, y = max(0, x), max(0, y)
+            alteracoes = [(px, py, tela_mod.BRANCO) for py in range(y, y2) for px in range(x, x2)]
+            tela_pixels.aplicar(alteracoes, usuario_id)
+            log.info("tela: área %dx%d apagada por %s", x2 - x, y2 - y, conexoes[usuario_id]["apelido"])
+            await ok(f"🎨 Área apagada ({len(alteracoes)} pixels).")
+        else:
+            await ok("Uso: /tela desfazer Usuario [minutos]  ou  /tela apagar X Y Largura Altura")
+
     elif cmd == "/liberar":
         if len(partes) < 2:
             await ok("Uso: /liberar Usuario")
@@ -1322,20 +1420,32 @@ async def manutencao(app):
                 if apagadas:
                     log.info("%d mensagens expiradas apagadas", apagadas)
                 await db.limpar_sessoes_expiradas()
+                await db.limpar_log_tela()
+                tela_pixels.limpar_esperas()
                 for limite in LIMITES:
                     limite.limpar()
             except Exception:
                 log.exception("erro na manutenção")
 
-    tarefa = asyncio.create_task(loop())
+    async def loop_tela():
+        while True:
+            await asyncio.sleep(0.25)
+            try:
+                await tela_pixels.descarregar(transmitir)
+            except Exception:
+                log.exception("erro ao atualizar a tela de pixels")
+
+    tarefas = [asyncio.create_task(loop()), asyncio.create_task(loop_tela())]
     yield
-    tarefa.cancel()
+    for tarefa in tarefas:
+        tarefa.cancel()
 
 
 async def ao_iniciar(app):
     global vapid, sessao_push
     await db.conectar(DATABASE_URL)
     log.info("banco conectado")
+    await tela_pixels.carregar()
     privada = VAPID_PRIVATE_KEY or await db.config_ou_padrao(
         "vapid_privada", webpush.Vapid.gerar(VAPID_SUBJECT).privada_b64())
     vapid = webpush.Vapid.de_privada_b64(privada, VAPID_SUBJECT)
@@ -1355,6 +1465,12 @@ async def ao_encerrar(app):
         await asyncio.wait(tarefas_push, timeout=5)
     if sessao_push:
         await sessao_push.close()
+    try:  # grava o que falta da tela antes de fechar o banco
+        tela_pixels.para_enviar.clear()
+        await tela_pixels.descarregar(transmitir)
+        await tela_pixels.salvar()
+    except Exception:
+        log.exception("erro ao salvar a tela de pixels")
     await db.fechar()
 
 
@@ -1369,6 +1485,7 @@ def criar_app():
     app.router.add_post("/api/push/inscrever", push_inscrever)
     app.router.add_post("/api/push/cancelar", push_cancelar)
     app.router.add_post("/api/audio", audio_enviar)
+    app.router.add_get("/api/tela", tela_imagem)
     app.router.add_get(r"/api/audio/{id:[A-Za-z0-9_-]{16,64}}", audio_ouvir)
     app.router.add_post("/api/entrar", entrar)
     app.router.add_post("/api/sair", sair)

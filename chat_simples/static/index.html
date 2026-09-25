@@ -153,6 +153,29 @@ button { font-family: inherit; }
 #modal-notif details { margin-top: 14px; font-size: 13px; color: #bbc; }
 #modal-notif summary { cursor: pointer; color: #ccf; font-weight: bold; }
 #modal-notif ol { padding-left: 18px; line-height: 1.5; }
+/* Tela de Pixels */
+.item.tela { background: #2a2a5a; }
+.item.tela.selecionado { background: #4a4a9f; }
+#tela-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#tela-viewport { flex: 1; position: relative; overflow: hidden; background: #101018; touch-action: none; cursor: crosshair; min-height: 120px; }
+#tela-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: pixelated; image-rendering: crisp-edges; box-shadow: 0 0 0 1px #333; }
+#tela-mira { position: absolute; pointer-events: none; outline: 2px solid #fff; box-shadow: 0 0 0 3px #000; display: none; }
+#tela-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; }
+#tela-zoom button { width: 40px; height: 40px; border-radius: 50%; border: 1px solid #444; background: rgba(20,20,31,.85); color: #eee; font-size: 18px; cursor: pointer; }
+#tela-carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #889; font-size: 14px; }
+#tela-painel { background: #14141f; padding: 8px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+#tela-info { font-size: 13px; color: #ccd; min-height: 17px; }
+#tela-linha { display: flex; gap: 8px; align-items: stretch; }
+#tela-paleta { display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; flex: 1; }
+.cor { aspect-ratio: 1; min-height: 24px; border-radius: 6px; border: 2px solid #333; cursor: pointer; padding: 0; }
+.cor.ativa { border-color: #fff; box-shadow: 0 0 0 2px #02BE01; }
+#tela-pintar { border: none; border-radius: 8px; background: #02BE01; color: white; font-weight: bold; font-size: 16px; min-width: 110px; cursor: pointer; padding: 0 12px; }
+#tela-pintar:disabled { background: #3a3a4a; color: #aab; cursor: default; }
+#tela-recado { padding: 8px 12px; background: #2a5a3f; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+@media (max-width: 700px) {
+  #tela-paleta { grid-template-columns: repeat(8, 1fr); }
+  #tela-pintar { min-width: 96px; }
+}
 .escondido { display: none !important; }
 
 /* Celular: barra lateral vira menu deslizante */
@@ -161,9 +184,9 @@ button { font-family: inherit; }
   #menu { display: block; }
   #sidebar {
     position: absolute; top: 0; left: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 50;
-    transform: translateX(-100%); transition: transform .2s ease; box-shadow: 4px 0 20px rgba(0,0,0,.5);
+    transform: translateX(-100%); transition: transform .2s ease;
   }
-  #sidebar.aberto { transform: translateX(0); }
+  #sidebar.aberto { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,.5); }
   #veu.aberto { display: block; position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 40; }
 }
 </style>
@@ -260,6 +283,26 @@ button { font-family: inherit; }
       <div id="titulo-textos"><div id="titulo-nome">📢 Mural de Recados</div><div id="titulo-sub"></div></div>
       <button id="titulo-acao" class="escondido"></button>
     </div>
+    <div id="tela-area" class="escondido">
+      <div id="tela-viewport">
+        <canvas id="tela-canvas" width="320" height="180"></canvas>
+        <div id="tela-mira"></div>
+        <div id="tela-carregando">Carregando a tela...</div>
+        <div id="tela-zoom">
+          <button id="zoom-mais" aria-label="Aproximar">＋</button>
+          <button id="zoom-menos" aria-label="Afastar">－</button>
+          <button id="zoom-ajustar" aria-label="Ver a tela inteira">⤢</button>
+        </div>
+      </div>
+      <div id="tela-painel">
+        <div id="tela-info">Toque num pixel, escolha a cor e aperte Pintar.</div>
+        <div id="tela-linha">
+          <div id="tela-paleta"></div>
+          <button id="tela-pintar" disabled>Pintar</button>
+        </div>
+      </div>
+      <div id="tela-recado" class="escondido"></div>
+    </div>
     <div id="mensagens"></div>
     <div id="form">
       <textarea id="texto" rows="1" placeholder="Mensagem..." disabled autocomplete="off" maxlength="2000"></textarea>
@@ -278,6 +321,7 @@ button { font-family: inherit; }
 try { localStorage.removeItem("chat_device_id"); localStorage.removeItem("chat_nome"); } catch (e) {}
 
 const MURAL = "MURAL";
+const TELA = "TELA";
 const LIMITE_LISTA = 200;   // máximo de pessoas renderizadas em "Todos" sem busca
 const ADMIN = 1, MASTER = 2;
 
@@ -287,7 +331,7 @@ let meuPapel = 0;
 let ttlHoras = 24;
 let bloqueadoAte = null;
 let timerDesbloqueio = null;
-let selecionado = MURAL;
+let selecionado = TELA;
 let conversas = {};
 let naoLidas = {};
 let usuarios = new Map();   // apelido -> online
@@ -391,7 +435,8 @@ const TRATADORES = {
     usuarios = new Map(d.usuarios.map(u => [u.apelido, u.online]));
     contatos = new Set(d.contatos);
     salas = new Map(d.salas.map(s => [s.nome, s]));
-    const aindaExiste = selecionado === MURAL || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
+    iniciarTela(d.tela);
+    const aindaExiste = selecionado === MURAL || selecionado === TELA || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
     selecionar(aindaExiste ? selecionado : MURAL, false);
     if (conversaPendente) { abrirChave(conversaPendente); conversaPendente = null; }
     if (pushSuportado && Notification.permission === "granted") inscreverPush();
@@ -405,6 +450,7 @@ const TRATADORES = {
   papel(d) { meuPapel = d.papel; atualizarNomeTopo(); atualizarTitulo(); atualizarEntrada(); },
   msg(d) {
     const chave = d.sala ? chaveSala(d.sala) : d.privado ? chaveUsuario(d.de) : MURAL;
+    if (chave === MURAL) setTimeout(atualizarRecadoTela, 0);
     const minha = d.de === meuNome;
     empurrar(chave, { remetente: d.de, texto: d.texto, hora: d.hora, audio: d.audio, classe: minha ? "enviada" : "recebida" });
     if (selecionado === chave) {
@@ -421,6 +467,10 @@ const TRATADORES = {
     if (selecionado === chaveUsuario(d.para)) renderizarConversa();
   },
   renomeado(d) { renomear(d.de, d.para); },
+  pixels(d) { aplicarPixels(d.p); },
+  pixel_ok(d) { definirEsperaTela(d.espera); },
+  pixel_espera(d) { definirEsperaTela(d.espera); if (d.mensagem) avisoTela(d.mensagem); },
+  pixel_info(d) { mostrarInfoPixel(d); },
   audio_ouvido(d) {
     for (const msgs of Object.values(conversas)) msgs.forEach(m => { if (m.audio && m.audio.id === d.id) m.audio.ouvido = true; });
     renderizarConversa();
@@ -537,7 +587,7 @@ el("sair").onclick = async () => {
   try { await fetch("/api/sair", {method: "POST"}); } catch (e) {}
   meuNome = ""; meuPapel = 0;
   conversas = {}; naoLidas = {}; usuarios = new Map(); contatos = new Set(); salas = new Map();
-  selecionado = MURAL;
+  selecionado = TELA;
   definirBloqueio(null);
   renderizarLista();
   renderizarConversa();
@@ -627,6 +677,7 @@ function tocarSom() {
 }
 
 function adicionar(chave, m) {
+  if (chave === TELA) { avisoTela(m.texto); return; }
   empurrar(chave, { remetente: "", hora: "", ...m });
   if (chave === selecionado) renderizarConversa();
 }
@@ -725,6 +776,11 @@ function renderizarLista() {
   const casa = (nome) => !busca || nome.toLowerCase().includes(busca);
   lista.innerHTML = "";
 
+  const itemTela = criarItem("tela" + (selecionado === TELA ? " selecionado" : ""), () => selecionar(TELA));
+  itemTela.appendChild(span("🎨"));
+  itemTela.appendChild(span("Tela de Pixels", "nome-item"));
+  lista.appendChild(itemTela);
+
   const mural = criarItem("mural" + (selecionado === MURAL ? " selecionado" : ""), () => selecionar(MURAL));
   mural.appendChild(span("📢"));
   mural.appendChild(span("Mural de Recados", "nome-item"));
@@ -800,7 +856,10 @@ function atualizarTitulo() {
   const acao = el("titulo-acao");
   acao.classList.add("escondido");
   let nome, sub;
-  if (selecionado === MURAL) {
+  if (selecionado === TELA) {
+    nome = "🎨 Tela de Pixels";
+    sub = "Todos pintam juntos · 1 pixel a cada " + (telaInfo ? telaInfo.espera_s : 10) + " segundos";
+  } else if (selecionado === MURAL) {
     nome = "📢 Mural de Recados";
     sub = meuPapel >= ADMIN ? "Recados para todos. Só Admins escrevem aqui." : "Recados dos Admins. Só Admins escrevem aqui.";
   } else if (ehSala(selecionado)) {
@@ -834,6 +893,7 @@ function atualizarEntrada() {
   input.disabled = !ativo;
   el("enviar").disabled = !ativo;
   input.placeholder = dica;
+  el("form").classList.toggle("escondido", selecionado === TELA);
   atualizarBotoes();
 }
 
@@ -846,6 +906,10 @@ function formatarHora(hora) {
 }
 
 function renderizarConversa() {
+  const naTela = selecionado === TELA;
+  el("tela-area").classList.toggle("escondido", !naTela);
+  el("mensagens").classList.toggle("escondido", naTela);
+  if (naTela) { mostrarTela(); return; }
   const container = el("mensagens");
   container.innerHTML = "";
   const msgs = conversas[selecionado] || [];
@@ -942,7 +1006,7 @@ document.addEventListener("visibilitychange", () => {
 
 function abrirChave(chave) {
   if (!meuNome) { conversaPendente = chave; return; }
-  const ok = chave === MURAL
+  const ok = chave === MURAL || chave === TELA
     || (ehPrivada(chave) && usuarios.has(nomeDaChave(chave)))
     || (ehSala(chave) && salas.get(nomeDaChave(chave))?.membro);
   selecionar(ok ? chave : MURAL);
@@ -1314,6 +1378,263 @@ async function tocarAudio(a) {
   renderizarConversa();
   try { await audio.play(); } catch (err) { adicionarSistema("🎤 Não consegui tocar o áudio neste aparelho."); pararAudio(); }
 }
+
+// ---------------------------------------------------------------
+// Tela de Pixels
+// ---------------------------------------------------------------
+let telaInfo = null;          // { largura, altura, paleta, espera_s }
+let telaPixels = null;        // Uint8Array com o índice da cor de cada pixel
+let telaCarregando = false;
+let telaFila = [];            // lotes que chegaram enquanto a imagem carregava
+let corEscolhida = 3;
+let pixelEscolhido = null;    // { x, y }
+let esperaAte = 0;            // Date.now() em que o usuário pode pintar de novo
+let timerEspera = null;
+const vista = { escala: 1, ox: 0, oy: 0, ajustada: false };
+const canvas = el("tela-canvas");
+const ctxTela = canvas.getContext("2d");
+
+function iniciarTela(info) {
+  telaInfo = info;
+  canvas.width = info.largura; canvas.height = info.altura;
+  const paleta = el("tela-paleta");
+  paleta.innerHTML = "";
+  info.paleta.forEach((cor, i) => {
+    const b = document.createElement("button");
+    b.className = "cor" + (i === corEscolhida ? " ativa" : "");
+    b.style.background = cor;
+    b.title = cor;
+    b.setAttribute("aria-label", "Cor " + (i + 1));
+    b.onclick = () => { corEscolhida = i; document.querySelectorAll(".cor").forEach((c, j) => c.classList.toggle("ativa", j === i)); desenharMira(); };
+    paleta.appendChild(b);
+  });
+  definirEsperaTela(info.espera_restante);
+  carregarTela();
+  atualizarRecadoTela();
+  atualizarTitulo();
+}
+
+async function carregarTela() {
+  if (telaCarregando) return;
+  telaCarregando = true;
+  telaFila = [];
+  try {
+    const resp = await fetch("/api/tela", { cache: "no-store" });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    telaPixels = new Uint8Array(await resp.arrayBuffer());
+    desenharTudo();
+    const fila = telaFila; telaFila = [];
+    fila.forEach(aplicarPixels);
+    el("tela-carregando").classList.add("escondido");
+  } catch (e) {
+    el("tela-carregando").textContent = "Não consegui carregar a tela. Tentando de novo...";
+    setTimeout(() => { telaCarregando = false; carregarTela(); }, 3000);
+    return;
+  }
+  telaCarregando = false;
+}
+
+function corRgb(hex) { return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]; }
+
+function desenharTudo() {
+  const { largura, altura, paleta } = telaInfo;
+  const rgb = paleta.map(corRgb);
+  const img = ctxTela.createImageData(largura, altura);
+  for (let i = 0; i < telaPixels.length; i++) {
+    const c = rgb[telaPixels[i]] || rgb[0];
+    img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
+  }
+  ctxTela.putImageData(img, 0, 0);
+}
+
+function aplicarPixels(lote) {
+  if (!telaPixels || telaCarregando) { telaFila.push(lote); return; }
+  for (const [x, y, c] of lote) {
+    telaPixels[y * telaInfo.largura + x] = c;
+    ctxTela.fillStyle = telaInfo.paleta[c];
+    ctxTela.fillRect(x, y, 1, 1);
+  }
+  if (pixelEscolhido && lote.some(([x, y]) => x === pixelEscolhido.x && y === pixelEscolhido.y)) {
+    enviarWs({ tipo: "pixel_info", x: pixelEscolhido.x, y: pixelEscolhido.y });
+  }
+}
+
+// --- enquadramento: arrastar, pinça, roda do mouse ---
+function tamanhoVista() { const r = el("tela-viewport").getBoundingClientRect(); return { w: r.width, h: r.height }; }
+
+function limitarVista() {
+  if (!telaInfo) return;
+  const { w, h } = tamanhoVista();
+  const cw = telaInfo.largura * vista.escala, ch = telaInfo.altura * vista.escala;
+  vista.ox = cw <= w ? (w - cw) / 2 : Math.min(0, Math.max(w - cw, vista.ox));
+  vista.oy = ch <= h ? (h - ch) / 2 : Math.min(0, Math.max(h - ch, vista.oy));
+}
+
+function aplicarVista() {
+  limitarVista();
+  canvas.style.transform = `translate(${vista.ox}px, ${vista.oy}px) scale(${vista.escala})`;
+  desenharMira();
+}
+
+function escalaAjustada() {
+  const { w, h } = tamanhoVista();
+  return Math.max(0.1, Math.min(w / telaInfo.largura, h / telaInfo.altura));
+}
+
+function ajustarTela() {
+  if (!telaInfo) return;
+  vista.escala = escalaAjustada();
+  vista.ajustada = true;
+  aplicarVista();
+}
+
+function zoomEm(fator, cx, cy) {
+  const minimo = escalaAjustada(), maximo = 48;
+  const nova = Math.min(maximo, Math.max(minimo, vista.escala * fator));
+  vista.ox = cx - (cx - vista.ox) * (nova / vista.escala);
+  vista.oy = cy - (cy - vista.oy) * (nova / vista.escala);
+  vista.escala = nova;
+  aplicarVista();
+}
+
+function mostrarTela() {
+  requestAnimationFrame(() => { if (!vista.ajustada) ajustarTela(); else aplicarVista(); });
+}
+window.addEventListener("resize", () => { if (selecionado === TELA) { vista.ajustada = false; mostrarTela(); } });
+
+const vp = el("tela-viewport");
+const toques = new Map();
+let gesto = null;
+
+vp.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("#tela-zoom")) return;
+  vp.setPointerCapture(e.pointerId);
+  toques.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const r = vp.getBoundingClientRect();
+  if (toques.size === 1) {
+    gesto = { tipo: "arrastar", x: e.clientX, y: e.clientY, ox: vista.ox, oy: vista.oy, moveu: false };
+  } else if (toques.size === 2) {
+    const [a, b] = [...toques.values()];
+    gesto = { tipo: "pinca", dist: Math.hypot(a.x - b.x, a.y - b.y), escala: vista.escala,
+              cx: (a.x + b.x) / 2 - r.left, cy: (a.y + b.y) / 2 - r.top, ox: vista.ox, oy: vista.oy };
+  }
+});
+vp.addEventListener("pointermove", (e) => {
+  if (!toques.has(e.pointerId) || !gesto) return;
+  toques.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gesto.tipo === "arrastar" && toques.size === 1) {
+    const dx = e.clientX - gesto.x, dy = e.clientY - gesto.y;
+    if (Math.abs(dx) + Math.abs(dy) > 6) gesto.moveu = true;
+    if (gesto.moveu) { vista.ox = gesto.ox + dx; vista.oy = gesto.oy + dy; aplicarVista(); }
+  } else if (gesto.tipo === "pinca" && toques.size === 2) {
+    const [a, b] = [...toques.values()];
+    const minimo = escalaAjustada();
+    const nova = Math.min(48, Math.max(minimo, gesto.escala * Math.hypot(a.x - b.x, a.y - b.y) / gesto.dist));
+    vista.ox = gesto.cx - (gesto.cx - gesto.ox) * (nova / gesto.escala);
+    vista.oy = gesto.cy - (gesto.cy - gesto.oy) * (nova / gesto.escala);
+    vista.escala = nova;
+    aplicarVista();
+  }
+});
+function fimToque(e) {
+  if (!toques.has(e.pointerId)) return;
+  toques.delete(e.pointerId);
+  if (gesto && gesto.tipo === "arrastar" && !gesto.moveu && e.type === "pointerup") escolherPixelNaTela(e.clientX, e.clientY);
+  gesto = toques.size === 1 ? { tipo: "arrastar", ...[...toques.values()][0], ox: vista.ox, oy: vista.oy, moveu: true } : null;
+}
+vp.addEventListener("pointerup", fimToque);
+vp.addEventListener("pointercancel", fimToque);
+vp.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = vp.getBoundingClientRect();
+  zoomEm(e.deltaY < 0 ? 1.25 : 0.8, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+el("zoom-mais").onclick = () => { const { w, h } = tamanhoVista(); zoomEm(1.6, w / 2, h / 2); };
+el("zoom-menos").onclick = () => { const { w, h } = tamanhoVista(); zoomEm(1 / 1.6, w / 2, h / 2); };
+el("zoom-ajustar").onclick = ajustarTela;
+
+// --- escolher e pintar ---
+function escolherPixelNaTela(cx, cy) {
+  if (!telaInfo) return;
+  const r = vp.getBoundingClientRect();
+  const x = Math.floor((cx - r.left - vista.ox) / vista.escala);
+  const y = Math.floor((cy - r.top - vista.oy) / vista.escala);
+  if (x < 0 || y < 0 || x >= telaInfo.largura || y >= telaInfo.altura) return;
+  pixelEscolhido = { x, y };
+  // pixel muito pequeno na tela: aproxima para facilitar
+  if (vista.escala < 6) zoomEm(8 / vista.escala, cx - r.left, cy - r.top);
+  desenharMira();
+  el("tela-info").textContent = "Pixel " + x + ", " + y + " · carregando...";
+  enviarWs({ tipo: "pixel_info", x, y });
+  atualizarBotaoPintar();
+}
+
+function desenharMira() {
+  const mira = el("tela-mira");
+  if (!pixelEscolhido || !telaInfo) { mira.style.display = "none"; return; }
+  const t = Math.max(vista.escala, 4);
+  mira.style.display = "block";
+  mira.style.width = mira.style.height = t + "px";
+  mira.style.left = (vista.ox + pixelEscolhido.x * vista.escala - (t - vista.escala) / 2) + "px";
+  mira.style.top = (vista.oy + pixelEscolhido.y * vista.escala - (t - vista.escala) / 2) + "px";
+  mira.style.background = telaInfo.paleta[corEscolhida] + "cc";
+}
+
+function tempoRelativo(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return "agora há pouco";
+  if (s < 3600) return "há " + Math.floor(s / 60) + " min";
+  if (s < 86400) return "há " + Math.floor(s / 3600) + " h";
+  return "há " + Math.floor(s / 86400) + " dias";
+}
+
+function mostrarInfoPixel(d) {
+  if (!pixelEscolhido || d.x !== pixelEscolhido.x || d.y !== pixelEscolhido.y) return;
+  el("tela-info").textContent = "Pixel " + d.x + ", " + d.y + " · " +
+    (d.apelido ? "pintado por " + d.apelido + " " + tempoRelativo(d.quando) : "ainda não pintado por ninguém");
+}
+
+function avisoTela(texto) {
+  el("tela-info").textContent = texto;
+}
+
+function definirEsperaTela(segundos) {
+  esperaAte = Date.now() + Math.max(0, segundos || 0) * 1000;
+  clearInterval(timerEspera);
+  timerEspera = setInterval(atualizarBotaoPintar, 250);
+  atualizarBotaoPintar();
+}
+
+function atualizarBotaoPintar() {
+  const b = el("tela-pintar");
+  const falta = Math.ceil((esperaAte - Date.now()) / 1000);
+  if (falta > 0) {
+    b.disabled = true;
+    b.textContent = "⏳ " + falta + "s";
+    return;
+  }
+  clearInterval(timerEspera);
+  b.disabled = !pixelEscolhido || !conectado() || !telaPixels;
+  b.textContent = pixelEscolhido ? "Pintar" : "Escolha";
+}
+
+el("tela-pintar").onclick = () => {
+  if (!pixelEscolhido || Date.now() < esperaAte) return;
+  const { x, y } = pixelEscolhido;
+  if (telaPixels[y * telaInfo.largura + x] === corEscolhida) { avisoTela("Esse pixel já está com essa cor. Escolha outra cor."); return; }
+  enviarWs({ tipo: "pixel", x, y, cor: corEscolhida });
+  definirEsperaTela(telaInfo.espera_s);   // o servidor confirma ou corrige
+};
+
+function atualizarRecadoTela() {
+  const faixa = el("tela-recado");
+  const recados = conversas[MURAL] || [];
+  const ultimo = [...recados].reverse().find(m => m.remetente && m.classe !== "sistema");
+  if (!ultimo) { faixa.classList.add("escondido"); return; }
+  faixa.textContent = "📢 " + ultimo.remetente + ": " + (ultimo.audio ? "🎤 Áudio" : ultimo.texto.replace(/\s+/g, " "));
+  faixa.classList.remove("escondido");
+}
+el("tela-recado").onclick = () => selecionar(MURAL);
 
 renderizarLista();
 conectar();
