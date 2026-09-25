@@ -1,4 +1,4 @@
-"""Sala de Bate-Papo: página + WebSocket numa única porta (aiohttp + PostgreSQL)."""
+"""SalaVip: página + WebSocket numa única porta (aiohttp + PostgreSQL)."""
 import asyncio
 import hashlib
 import hmac
@@ -384,9 +384,18 @@ async def cabecalhos_seguranca(request, handler):
     return resposta
 
 
+HOST_VALIDO = re.compile(r"^[A-Za-z0-9.-]+(:\d+)?$")
+
+
+def url_base(request):
+    """https://dominio atual, para os links absolutos da prévia (WhatsApp, Telegram...)."""
+    host = request.host if HOST_VALIDO.match(request.host or "") else "localhost"
+    return ("https" if requisicao_https(request) else "http") + "://" + host
+
+
 async def pagina(request):
     return web.Response(
-        text=PAGINA,
+        text=PAGINA.replace("{{URL_BASE}}", url_base(request)),
         content_type="text/html",
         headers={
             "Cache-Control": "no-cache",

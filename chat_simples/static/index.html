@@ -3,14 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Sala de Bate-Papo</title>
+<title>SalaVip — Chat</title>
+<meta name="description" content="SalaVip: bate-papo com mural de recados, conversas privadas e salas com senha. Entre e converse!">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SalaVip">
+<meta property="og:title" content="SalaVip — Chat">
+<meta property="og:description" content="Bate-papo com mural de recados, conversas privadas e salas com senha. Entre e converse!">
+<meta property="og:url" content="{{URL_BASE}}/">
+<meta property="og:image" content="{{URL_BASE}}/icones/og-image.jpg">
+<meta property="og:image:secure_url" content="{{URL_BASE}}/icones/og-image.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Logo SalaVip">
+<meta property="og:locale" content="pt_BR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="{{URL_BASE}}/icones/og-image.jpg">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0a0a12">
+<meta name="theme-color" content="#03110b">
 <link rel="apple-touch-icon" href="/icones/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Chat">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E">
+<meta name="apple-mobile-web-app-title" content="SalaVip">
+<link rel="icon" type="image/png" href="/icones/icone-192.png">
 <style>
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
@@ -93,6 +108,7 @@ button { font-family: inherit; }
   width: 400px; text-align: center; position: relative;
 }
 .modal h2 { margin: 0 0 8px 0; font-size: 20px; }
+.modal .logo { display: block; width: 128px; height: 128px; margin: -6px auto 6px; border-radius: 50%; }
 .modal .dica { color: #99a; font-size: 13px; margin-bottom: 16px; }
 .modal input {
   width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #444;
@@ -129,7 +145,8 @@ button { font-family: inherit; }
 <body>
 <div id="modal-nome" class="modal escondido">
   <form class="caixa" id="modal-form">
-    <h2>Entrar no chat</h2>
+    <img class="logo" src="/icones/logo-256.png" alt="SalaVip" width="128" height="128">
+    <h2>Entrar na SalaVip</h2>
     <div class="dica">Primeira vez? Escolha um nome e uma senha — a conta é criada na hora.</div>
     <div class="erro" id="modal-erro"></div>
     <input id="modal-input" placeholder="Seu nome" maxlength="20" autocomplete="username" autocapitalize="off">

@@ -7,7 +7,7 @@ um serviço no **Easypanel**.
 
 | Pasta | Serviço Easypanel | Build | Porta | Descrição |
 |---|---|---|---|---|
-| [`chat_simples/`](chat_simples/) | `chat` | Dockerfile | 8080 | Chat em tempo real (aiohttp + PostgreSQL) |
+| [`chat_simples/`](chat_simples/) | `chat_simples` | Dockerfile | 8080 | **SalaVip**: chat em tempo real (aiohttp + PostgreSQL) em https://chat.salavip.live |
 
 ## Como apontar uma pasta no Easypanel
 

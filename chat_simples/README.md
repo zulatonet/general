@@ -1,4 +1,7 @@
-# Chat — Sala de Bate-Papo
+# SalaVip — Chat
+
+No ar em **https://chat.salavip.live**.
+
 
 Chat em tempo real com **Mural de Recados** (só Admins escrevem), conversas
 **privadas** e **salas com senha** que expiram em 24h, contatos fixados, busca,
@@ -121,6 +124,12 @@ mensagem, mesmo com o app fechado.
 - Várias mensagens da mesma conversa viram uma notificação só, com contador.
 - Tocar na notificação abre direto a conversa.
 - Ao sair da conta, o aparelho para de receber as notificações dela.
+
+**Prévia do link (WhatsApp, Telegram, Facebook):** a página tem tags Open
+Graph com o nome, a descrição e a imagem `static/icones/og-image.jpg`
+(1200×630). Os links absolutos usam o domínio de quem acessou, então
+funcionam em qualquer domínio apontado para o serviço. O WhatsApp guarda a
+prévia em cache: se ela mudar, a nova pode levar um tempo para aparecer.
 
 **Como funciona:** o servidor manda o push para o serviço do navegador
 (Google, Mozilla ou Apple), que entrega no aparelho. O conteúdo vai
