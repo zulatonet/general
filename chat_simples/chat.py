@@ -42,6 +42,9 @@ MIN_SENHA_SALA = 4
 MAX_SENHA = 128
 MAX_TEXTO = 2000
 MAX_SALAS_POR_USUARIO = 5
+MAX_AUDIO_MS = 10_000
+MAX_AUDIO_BYTES = 200 * 1024
+MIME_AUDIO = re.compile(r"^audio/[a-z0-9.+-]+(;\s*codecs=[\"']?[a-z0-9.,+ -]+[\"']?)?$", re.I)
 APELIDO_VALIDO = re.compile(r"^[\w.-]{2,%d}$" % MAX_APELIDO)
 
 # Anti-flood: mais de FLOOD_MAX_MSGS mensagens em FLOOD_JANELA segundos = 1 aviso.
@@ -245,8 +248,20 @@ def iso(dt):
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds") if dt else None
 
 
+def dados_audio(audio_id, duracao_ms, unico, ouvido):
+    return {"id": audio_id, "duracao_ms": duracao_ms, "unico": unico, "ouvido": ouvido}
+
+
 def formatar_msg(m):
-    return {"remetente": m["remetente"], "texto": m["texto"], "hora": iso(m["enviado_em"])}
+    msg = {"remetente": m["remetente"], "texto": m["texto"], "hora": iso(m["enviado_em"])}
+    if m.get("audio_id"):
+        msg["audio"] = dados_audio(m["audio_id"], m["audio_duracao_ms"], m["audio_unico"], m["audio_ouvido"])
+    return msg
+
+
+def duracao_texto(ms):
+    seg = max(1, round((ms or 0) / 1000))
+    return f"0:{seg:02d}"
 
 
 # ---------------------------------------------------------------
@@ -426,7 +441,7 @@ async def pagina(request):
             "Cache-Control": "no-cache",
             "Content-Security-Policy": (
                 "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'"
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'"
             ),
         },
     )
@@ -621,8 +636,8 @@ async def pode_enviar(ws, usuario_id):
     info = conexoes[usuario_id]
     agora = datetime.now(timezone.utc)
     if info.get("bloqueado_ate") and info["bloqueado_ate"] > agora:
-        await enviar(ws, {"tipo": "bloqueado", "ate": iso(info["bloqueado_ate"]),
-                          "mensagem": "🚫 Seu envio está travado por flood."})
+        aviso = {"tipo": "bloqueado", "ate": iso(info["bloqueado_ate"]), "mensagem": "🚫 Seu envio está travado por flood."}
+        await (enviar(ws, aviso) if ws else enviar_para_usuario(usuario_id, aviso))
         return False
     if detector_flood.permitir(usuario_id):
         return True
@@ -760,6 +775,98 @@ async def entregar_privada(usuario_id, alvo, texto):
     await enviar_para_usuario(alvo["id"], {"tipo": "msg", "de": apelido, "texto": texto, "privado": True, "hora": hora})
     await enviar_para_usuario(usuario_id, {"tipo": "msg_enviada", "para": alvo["apelido"], "texto": texto, "privado": True, "hora": hora})
     notificar([alvo["id"]], apelido, texto, "u:" + apelido)
+
+
+# ---------------------------------------------------------------
+# Áudios (até 10 s): privado = ouvir uma vez; Mural = só admins, fica guardado
+# ---------------------------------------------------------------
+def parece_audio(dados):
+    """Confere a assinatura do arquivo: WebM/Matroska, Ogg ou MP4/M4A."""
+    return dados[:4] == b"\x1a\x45\xdf\xa3" or dados[:4] == b"OggS" or dados[4:8] == b"ftyp"
+
+
+async def audio_enviar(request):
+    """Recebe o áudio gravado. ?para=Apelido (privado) ou sem `para` (Mural). ?duracao=ms"""
+    if not origem_valida(request):
+        return web.json_response({"erro": "Origem inválida."}, status=403)
+    sessao = await usuario_da_requisicao(request)
+    if not sessao:
+        return web.json_response({"erro": "Não autenticado."}, status=401)
+    usuario_id = sessao["id"]
+    if usuario_id not in conexoes:
+        return web.json_response({"erro": "Conecte-se ao chat para enviar áudio."}, status=409)
+    if not limite_acoes.permitir(usuario_id):
+        return web.json_response({"erro": "Devagar! Você está fazendo coisas rápido demais."}, status=429)
+
+    mime = (request.headers.get("Content-Type") or "").strip()
+    try:
+        duracao = int(request.query.get("duracao", "0"))
+    except ValueError:
+        duracao = 0
+    dados = await request.read()
+    if not MIME_AUDIO.match(mime) or len(mime) > 100 or not dados or len(dados) > MAX_AUDIO_BYTES or not parece_audio(dados):
+        return web.json_response({"erro": "Áudio inválido."}, status=400)
+    if not (300 <= duracao <= MAX_AUDIO_MS + 700):
+        return web.json_response({"erro": "O áudio deve ter até 10 segundos."}, status=400)
+    duracao = min(duracao, MAX_AUDIO_MS)
+
+    apelido = conexoes[usuario_id]["apelido"]
+    destino = request.query.get("para")
+    if request.query.get("sala"):
+        return web.json_response({"erro": "Áudio não é permitido nas salas."}, status=400)
+    if destino is None:
+        if await db.papel(usuario_id) < db.ADMIN:
+            return web.json_response({"erro": "📢 Só Admins podem mandar áudio no Mural."}, status=403)
+        alvo = None
+    else:
+        alvo = await db.buscar_usuario_por_apelido(destino)
+        if not alvo or alvo["id"] == usuario_id:
+            return web.json_response({"erro": "Usuário não encontrado."}, status=404)
+    if not await pode_enviar(None, usuario_id):
+        return web.json_response({"erro": "Envio travado por flood."}, status=429)
+
+    audio_id = secrets.token_urlsafe(18)
+    unico = alvo is not None
+    texto = f"🎤 Áudio ({duracao_texto(duracao)})"
+    hora = iso(await db.salvar_audio(audio_id, usuario_id, alvo["id"] if alvo else None, texto, duracao, unico, mime, dados))
+    await db.atualizar_ultimo_acesso(usuario_id)
+    audio = dados_audio(audio_id, duracao, unico, False)
+    if alvo is None:
+        await transmitir({"tipo": "msg", "de": apelido, "texto": texto, "privado": False, "hora": hora, "audio": audio})
+        notificar_todos_exceto(usuario_id, "📢 Mural de Recados", f"{apelido}: {texto}", "MURAL")
+    else:
+        await enviar_para_usuario(alvo["id"], {"tipo": "msg", "de": apelido, "texto": texto, "privado": True, "hora": hora, "audio": audio})
+        await enviar_para_usuario(usuario_id, {"tipo": "msg_enviada", "para": alvo["apelido"], "texto": texto, "privado": True, "hora": hora, "audio": audio})
+        notificar([alvo["id"]], apelido, texto, "u:" + apelido)
+    return web.json_response({"ok": True})
+
+
+async def audio_ouvir(request):
+    sessao = await usuario_da_requisicao(request)
+    if not sessao:
+        return web.json_response({"erro": "Não autenticado."}, status=401)
+    audio_id = request.match_info["id"]
+    info = await db.info_audio(audio_id)
+    if not info:
+        return web.json_response({"erro": "Áudio não encontrado."}, status=404)
+
+    if not info["audio_unico"]:  # Mural: qualquer pessoa logada ouve quantas vezes quiser
+        row = await db.ler_audio(audio_id)
+        if not row:
+            return web.json_response({"erro": "Áudio apagado."}, status=410)
+        return web.Response(body=row["dados"], content_type=row["mime"].split(";")[0],
+                            headers={"Cache-Control": "private, max-age=86400"})
+
+    # Privado: só quem recebeu, e uma vez só
+    if sessao["id"] != info["destinatario_id"]:
+        return web.json_response({"erro": "Áudio de ouvir uma vez: só quem recebeu pode ouvir."}, status=403)
+    row = await db.consumir_audio(audio_id)
+    if not row:
+        return web.json_response({"erro": "Esse áudio já foi ouvido."}, status=410)
+    evento = {"tipo": "audio_ouvido", "id": audio_id}
+    await enviar_para_usuario(info["remetente_id"], evento)
+    await enviar_para_usuario(info["destinatario_id"], evento)
+    return web.Response(body=row["dados"], content_type=row["mime"].split(";")[0], headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------
@@ -1151,7 +1258,7 @@ async def ao_encerrar(app):
 
 
 def criar_app():
-    app = web.Application(middlewares=[cabecalhos_seguranca], client_max_size=64 * 1024)
+    app = web.Application(middlewares=[cabecalhos_seguranca], client_max_size=MAX_AUDIO_BYTES + 16 * 1024)
     app.router.add_get("/", pagina)
     app.router.add_get("/health", saude)
     app.router.add_get("/sw.js", service_worker)
@@ -1160,6 +1267,8 @@ def criar_app():
     app.router.add_get("/api/push/chave", push_chave)
     app.router.add_post("/api/push/inscrever", push_inscrever)
     app.router.add_post("/api/push/cancelar", push_cancelar)
+    app.router.add_post("/api/audio", audio_enviar)
+    app.router.add_get(r"/api/audio/{id:[A-Za-z0-9_-]{16,64}}", audio_ouvir)
     app.router.add_post("/api/entrar", entrar)
     app.router.add_post("/api/sair", sair)
     app.router.add_get("/ws", websocket)

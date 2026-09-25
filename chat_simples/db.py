@@ -81,6 +81,23 @@ CREATE INDEX IF NOT EXISTS idx_msg_sala ON mensagens (sala_id, id) WHERE sala_id
 CREATE INDEX IF NOT EXISTS idx_msg_nao_lidas ON mensagens (destinatario_id) WHERE NOT lida;
 CREATE INDEX IF NOT EXISTS idx_msg_expira ON mensagens (enviado_em) WHERE destinatario_id IS NOT NULL OR sala_id IS NOT NULL;
 
+-- Áudios (até 10 s). O arquivo fica em `audios`, ligado à mensagem: apagar a
+-- mensagem (expiração, /apagar) apaga o áudio junto. No privado o áudio é de
+-- ouvir uma vez: ao ser ouvido, o arquivo é apagado e a mensagem fica "ouvido".
+ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS audio_id TEXT;
+ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS audio_duracao_ms INTEGER;
+ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS audio_unico BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS audio_ouvido BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_audio ON mensagens (audio_id) WHERE audio_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS audios (
+    id          TEXT PRIMARY KEY,
+    mensagem_id BIGINT NOT NULL REFERENCES mensagens(id) ON DELETE CASCADE,
+    mime        TEXT NOT NULL,
+    dados       BYTEA NOT NULL,
+    criado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_audios_mensagem ON audios (mensagem_id);
+
 -- Configurações geradas pelo próprio chat (ex.: chaves VAPID do push).
 CREATE TABLE IF NOT EXISTS config (
     chave TEXT PRIMARY KEY,
@@ -106,6 +123,7 @@ ALTER TABLE sala_membros ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contatos     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mensagens    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audios       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE push_inscricoes ENABLE ROW LEVEL SECURITY;
 """
 
@@ -395,7 +413,7 @@ async def salvar_mensagem(remetente_id, destinatario_id, texto, sala_id=None):
 async def carregar_historico(usuario_id, ttl_horas, limite_mural=50, limite_privadas=500, limite_salas=500):
     mural = await pool.fetch(
         """SELECT * FROM (
-             SELECT m.id, u.apelido AS remetente, m.texto, m.enviado_em
+             SELECT m.id, u.apelido AS remetente, m.texto, m.enviado_em, m.audio_id, m.audio_duracao_ms, m.audio_unico, m.audio_ouvido
              FROM mensagens m JOIN usuarios u ON u.id = m.remetente_id
              WHERE m.destinatario_id IS NULL AND m.sala_id IS NULL ORDER BY m.id DESC LIMIT $1
            ) t ORDER BY id""",
@@ -403,7 +421,7 @@ async def carregar_historico(usuario_id, ttl_horas, limite_mural=50, limite_priv
     )
     privadas = await pool.fetch(
         f"""SELECT * FROM (
-              SELECT m.id, r.apelido AS remetente, d.apelido AS destinatario, m.texto, m.enviado_em
+              SELECT m.id, r.apelido AS remetente, d.apelido AS destinatario, m.texto, m.enviado_em, m.audio_id, m.audio_duracao_ms, m.audio_unico, m.audio_ouvido
               FROM mensagens m
               JOIN usuarios r ON r.id = m.remetente_id
               JOIN usuarios d ON d.id = m.destinatario_id
@@ -414,7 +432,7 @@ async def carregar_historico(usuario_id, ttl_horas, limite_mural=50, limite_priv
     )
     salas = await pool.fetch(
         f"""SELECT * FROM (
-              SELECT m.id, s.nome AS sala, u.apelido AS remetente, m.texto, m.enviado_em
+              SELECT m.id, s.nome AS sala, u.apelido AS remetente, m.texto, m.enviado_em, m.audio_id, m.audio_duracao_ms, m.audio_unico, m.audio_ouvido
               FROM mensagens m
               JOIN salas s ON s.id = m.sala_id
               JOIN sala_membros sm ON sm.sala_id = m.sala_id AND sm.usuario_id = $1
@@ -430,7 +448,7 @@ async def carregar_historico(usuario_id, ttl_horas, limite_mural=50, limite_priv
 async def historico_sala(sala_id, ttl_horas, limite=200):
     return await pool.fetch(
         f"""SELECT * FROM (
-              SELECT m.id, u.apelido AS remetente, m.texto, m.enviado_em
+              SELECT m.id, u.apelido AS remetente, m.texto, m.enviado_em, m.audio_id, m.audio_duracao_ms, m.audio_unico, m.audio_ouvido
               FROM mensagens m JOIN usuarios u ON u.id = m.remetente_id
               WHERE m.sala_id = $1 AND {FILTRO_VALIDADE.format(p="$3")}
               ORDER BY m.id DESC LIMIT $2
@@ -540,3 +558,44 @@ async def inscricoes_exceto(usuario_id):
     return await pool.fetch(
         "SELECT usuario_id, endpoint, p256dh, auth FROM push_inscricoes WHERE usuario_id <> $1", usuario_id
     )
+
+
+# ---------------------------------------------------------------
+# Áudios
+# ---------------------------------------------------------------
+async def salvar_audio(audio_id, remetente_id, destinatario_id, texto, duracao_ms, unico, mime, dados):
+    """Grava a mensagem de áudio e o arquivo juntos. Retorna enviado_em."""
+    async with pool.acquire() as conn, conn.transaction():
+        msg = await conn.fetchrow(
+            """INSERT INTO mensagens (remetente_id, destinatario_id, texto, audio_id, audio_duracao_ms, audio_unico)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, enviado_em""",
+            remetente_id, destinatario_id, texto, audio_id, duracao_ms, unico,
+        )
+        await conn.execute(
+            "INSERT INTO audios (id, mensagem_id, mime, dados) VALUES ($1, $2, $3, $4)",
+            audio_id, msg["id"], mime, dados,
+        )
+        return msg["enviado_em"]
+
+
+async def info_audio(audio_id):
+    """Dados da mensagem do áudio (existe mesmo depois de ouvido) e se o arquivo ainda existe."""
+    return await pool.fetchrow(
+        """SELECT m.remetente_id, m.destinatario_id, m.sala_id, m.audio_unico,
+                  EXISTS (SELECT 1 FROM audios a WHERE a.id = m.audio_id) AS disponivel
+           FROM mensagens m WHERE m.audio_id = $1""",
+        audio_id,
+    )
+
+
+async def ler_audio(audio_id):
+    return await pool.fetchrow("SELECT mime, dados FROM audios WHERE id = $1", audio_id)
+
+
+async def consumir_audio(audio_id):
+    """Entrega o áudio de ouvir-uma-vez e apaga o arquivo. Só um pedido consegue (None para os outros)."""
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow("DELETE FROM audios WHERE id = $1 RETURNING mime, dados", audio_id)
+        if row:
+            await conn.execute("UPDATE mensagens SET audio_ouvido = TRUE WHERE audio_id = $1", audio_id)
+        return row

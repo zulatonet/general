@@ -28,6 +28,8 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `GET /manifest.webmanifest`, `GET /sw.js`, `/icones/*` | App instalável (PWA) e service worker |
 | `GET /api/push/chave` | Chave pública VAPID |
 | `POST /api/push/inscrever` / `POST /api/push/cancelar` | Liga/desliga as notificações do aparelho |
+| `POST /api/audio?para=Nome&duracao=ms` | Envia áudio (sem `para` = Mural, só Admins) |
+| `GET /api/audio/{id}` | Toca o áudio (privado: só quem recebeu, uma vez) |
 
 ## Variáveis de ambiente
 
@@ -163,6 +165,19 @@ endereços oficiais desses serviços.
   automaticamente (limpeza a cada 5 minutos). O aviso aparece no topo de
   cada conversa privada e de sala.
 
+### Áudios (até 10 segundos)
+- Com a caixa de texto vazia, o botão vira **🎤**: **segure para gravar**,
+  **solte para enviar**, **deslize para o lado para cancelar**. Aos 10 s envia
+  sozinho; toques de menos de meio segundo são ignorados.
+- **Privado:** o áudio é de **ouvir uma vez**. Quem recebe toca e o arquivo é
+  apagado do banco na hora; quem enviou vê "✓ enviado" → "✓✓ ouvido" (e
+  também não consegue ouvir de novo). Se não for ouvido, some em 24h com a conversa.
+- **Mural:** só Admins enviam; o áudio fica guardado e todos podem ouvir
+  quantas vezes quiserem.
+- **Salas:** não aceitam áudio.
+- Os arquivos ficam no **PostgreSQL** (tabela `audios`), não no disco do
+  servidor. Em Opus a 32 kbps, 10 s dão uns 40 KB.
+
 ### Anti-flood
 - Mais de **8 mensagens em 10 segundos** conta **1 aviso** e trava o envio por
   **1 minuto**.
@@ -249,8 +264,10 @@ comandos que a pessoa pode usar.
 - `sala_membros` (sala_id, usuario_id, entrou_em)
 - `contatos` (usuario_id, contato_id): pessoas fixadas
 - `push_inscricoes` (endpoint, usuario_id, p256dh, auth, criado_em): aparelhos com notificação ligada
+- `audios` (id, mensagem_id, mime, dados): arquivos de áudio, apagados junto com a mensagem
 - `config` (chave, valor): configurações geradas pelo chat (ex.: chave VAPID)
-- `mensagens` (id, remetente_id, destinatario_id, sala_id, texto, enviado_em, lida)
+- `mensagens` (id, remetente_id, destinatario_id, sala_id, texto, enviado_em, lida,
+  audio_id, audio_duracao_ms, audio_unico, audio_ouvido)
   - Mural: `destinatario_id` e `sala_id` nulos (não expira)
   - Privada: `destinatario_id` preenchido (expira)
   - Sala: `sala_id` preenchido (expira)

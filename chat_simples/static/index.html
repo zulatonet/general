@@ -96,6 +96,22 @@ button { font-family: inherit; }
 #texto:disabled { opacity: 0.5; }
 #enviar { padding: 12px 16px; border: none; border-radius: 8px; background: #4a4a8f; color: white; cursor: pointer; font-size: 16px; font-weight: bold; }
 #enviar:disabled { opacity: 0.5; }
+#microfone { width: 50px; height: 46px; border: none; border-radius: 50%; background: #4a4a8f; color: white; font-size: 20px; cursor: pointer;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; flex-shrink: 0; }
+#microfone.gravando { background: #d33; transform: scale(1.15); }
+#gravando { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 12px; min-height: 46px; border-radius: 8px;
+  border: 1px solid #733; background: #1e1e2f; color: #fbb; font-size: 14px; min-width: 0; }
+#gravando.cancelar { border-color: #aa5; color: #ffd; }
+.ponto-rec { width: 10px; height: 10px; border-radius: 50%; background: #f44; animation: piscar 1s infinite; flex-shrink: 0; }
+@keyframes piscar { 50% { opacity: .2; } }
+#rec-tempo { font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.barra-rec { flex: 1; height: 4px; background: #333; border-radius: 2px; overflow: hidden; min-width: 30px; }
+.barra-rec div { height: 100%; width: 0; background: #f44; }
+#rec-dica { font-size: 12px; color: #aaa; white-space: nowrap; }
+.audio-msg { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn-audio { background: rgba(255,255,255,.14); border: none; color: white; border-radius: 18px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
+.btn-audio:disabled { opacity: .6; cursor: default; }
+.audio-estado { font-size: 13px; color: #ccd; }
 
 /* Modais */
 .modal {
@@ -247,7 +263,13 @@ button { font-family: inherit; }
     <div id="mensagens"></div>
     <div id="form">
       <textarea id="texto" rows="1" placeholder="Mensagem..." disabled autocomplete="off" maxlength="2000"></textarea>
+      <div id="gravando" class="escondido">
+        <span class="ponto-rec"></span><span id="rec-tempo">0:00</span>
+        <div class="barra-rec"><div id="rec-barra"></div></div>
+        <span id="rec-dica">◀ deslize para cancelar</span>
+      </div>
       <button id="enviar" disabled>Enviar</button>
+      <button id="microfone" class="escondido" title="Segure para gravar um áudio (até 10 s)" aria-label="Gravar áudio">🎤</button>
     </div>
   </div>
 </div>
@@ -306,7 +328,7 @@ function mostrarLogin(erro) {
 
 function paraMsgs(lista) {
   return (lista || []).map(m => ({
-    remetente: m.remetente, texto: m.texto, hora: m.hora,
+    remetente: m.remetente, texto: m.texto, hora: m.hora, audio: m.audio,
     classe: m.remetente === meuNome ? "enviada" : "recebida"
   }));
 }
@@ -380,7 +402,7 @@ const TRATADORES = {
   msg(d) {
     const chave = d.sala ? chaveSala(d.sala) : d.privado ? chaveUsuario(d.de) : MURAL;
     const minha = d.de === meuNome;
-    empurrar(chave, { remetente: d.de, texto: d.texto, hora: d.hora, classe: minha ? "enviada" : "recebida" });
+    empurrar(chave, { remetente: d.de, texto: d.texto, hora: d.hora, audio: d.audio, classe: minha ? "enviada" : "recebida" });
     if (selecionado === chave) {
       renderizarConversa();
       if (d.privado) enviarWs({ tipo: "marcar_lidas", interlocutor: d.de });
@@ -391,10 +413,14 @@ const TRATADORES = {
     renderizarLista();
   },
   msg_enviada(d) {
-    empurrar(chaveUsuario(d.para), { remetente: meuNome, texto: d.texto, hora: d.hora, classe: "enviada" });
+    empurrar(chaveUsuario(d.para), { remetente: meuNome, texto: d.texto, hora: d.hora, audio: d.audio, classe: "enviada" });
     if (selecionado === chaveUsuario(d.para)) renderizarConversa();
   },
   renomeado(d) { renomear(d.de, d.para); },
+  audio_ouvido(d) {
+    for (const msgs of Object.values(conversas)) msgs.forEach(m => { if (m.audio && m.audio.id === d.id) m.audio.ouvido = true; });
+    renderizarConversa();
+  },
   apagado(d) { aplicarApagado(d); },
   bloqueado(d) { definirBloqueio(d.ate); adicionarSistema(d.mensagem + (bloqueadoAte ? " Liberado em " + formatarHora(d.ate) + "." : "")); },
   desbloqueado(d) { definirBloqueio(null); adicionarSistema(d.mensagem); },
@@ -804,6 +830,7 @@ function atualizarEntrada() {
   input.disabled = !ativo;
   el("enviar").disabled = !ativo;
   input.placeholder = dica;
+  atualizarBotoes();
 }
 
 function formatarHora(hora) {
@@ -833,8 +860,7 @@ function renderizarConversa() {
       n.className = "nome"; n.textContent = m.remetente;
       div.appendChild(n);
     }
-    const c = document.createElement("div"); c.textContent = m.texto;
-    div.appendChild(c);
+    div.appendChild(m.audio ? elementoAudio(m) : Object.assign(document.createElement("div"), { textContent: m.texto }));
     if (m.hora) {
       const h = document.createElement("div");
       h.className = "hora"; h.textContent = formatarHora(m.hora);
@@ -859,6 +885,7 @@ function enviarMensagem() {
   else if (ehPrivada(selecionado)) dados.para = nomeDaChave(selecionado);
   enviarWs(dados);
   limparTexto();
+  atualizarBotoes();
   input.focus();
 }
 
@@ -1102,6 +1129,187 @@ el("aviso-fechar").onclick = () => {
   try { localStorage.setItem("chat_aviso_app", "fechado"); } catch (e) {}
   atualizarAviso();
 };
+
+// ---------------------------------------------------------------
+// Áudio: segure 🎤 para gravar (até 10 s), solte para enviar
+// ---------------------------------------------------------------
+const MAX_AUDIO_MS = 10000;
+const gravacaoSuportada = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+let gravacao = null;      // { recorder, stream, partes, inicio, timer, cancelada, xInicial, ativa }
+let tocando = null;       // { id, audio, url }
+const cacheAudios = new Map();  // id -> URL (só áudios do Mural, que podem tocar de novo)
+
+function audioPermitidoAqui() {
+  return gravacaoSuportada && conectado() && (ehPrivada(selecionado) || (selecionado === MURAL && meuPapel >= ADMIN));
+}
+
+function atualizarBotoes() {
+  const temTexto = el("texto").value.trim().length > 0;
+  const mic = !temTexto && (audioPermitidoAqui() || gravacao);
+  el("microfone").classList.toggle("escondido", !mic);
+  el("enviar").classList.toggle("escondido", mic);
+}
+el("texto").addEventListener("input", atualizarBotoes);
+
+function tipoGravacao() {
+  for (const t of ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"]) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return "";
+}
+
+function mostrarGravacao(sim) {
+  el("gravando").classList.toggle("escondido", !sim);
+  el("texto").classList.toggle("escondido", sim);
+  el("microfone").classList.toggle("gravando", sim);
+  el("gravando").classList.remove("cancelar");
+  el("rec-dica").textContent = "◀ deslize para cancelar";
+}
+
+async function iniciarGravacao(e) {
+  if (gravacao || !audioPermitidoAqui()) return;
+  e.preventDefault();
+  try { el("microfone").setPointerCapture(e.pointerId); } catch (err) {}
+  const destino = selecionado;
+  gravacao = { partes: [], xInicial: e.clientX, soltou: false, destino };
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) {
+    gravacao = null;
+    adicionarSistema("🎤 Sem acesso ao microfone. Permita o microfone para este site nas configurações do navegador.");
+    atualizarBotoes();
+    return;
+  }
+  if (!gravacao || gravacao.soltou) {   // soltou enquanto o navegador pedia permissão
+    stream.getTracks().forEach(t => t.stop());
+    gravacao = null;
+    adicionarSistema("🎤 Microfone liberado. Agora segure o botão para gravar.");
+    atualizarBotoes();
+    return;
+  }
+  const tipo = tipoGravacao();
+  const recorder = new MediaRecorder(stream, { ...(tipo ? { mimeType: tipo } : {}), audioBitsPerSecond: 32000 });
+  Object.assign(gravacao, { recorder, stream, inicio: Date.now(), ativa: true });
+  recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) gravacao && gravacao.partes.push(ev.data); };
+  recorder.start(250);
+  try { navigator.vibrate && navigator.vibrate(30); } catch (err) {}
+  mostrarGravacao(true);
+  gravacao.timer = setInterval(() => {
+    if (!gravacao) return;
+    const ms = Date.now() - gravacao.inicio;
+    const seg = Math.min(10, Math.floor(ms / 1000));
+    el("rec-tempo").textContent = "0:" + String(seg).padStart(2, "0");
+    el("rec-barra").style.width = Math.min(100, ms / MAX_AUDIO_MS * 100) + "%";
+    if (ms >= MAX_AUDIO_MS) finalizarGravacao(true);
+  }, 100);
+}
+
+function moverGravacao(e) {
+  if (!gravacao || !gravacao.ativa) return;
+  const cancelar = gravacao.xInicial - e.clientX > 80;
+  gravacao.cancelada = cancelar;
+  el("gravando").classList.toggle("cancelar", cancelar);
+  el("rec-dica").textContent = cancelar ? "solte para cancelar" : "◀ deslize para cancelar";
+}
+
+function finalizarGravacao(enviar) {
+  if (!gravacao) return;
+  if (!gravacao.ativa) { gravacao.soltou = true; return; }
+  const g = gravacao;
+  gravacao = null;
+  clearInterval(g.timer);
+  mostrarGravacao(false);
+  const duracao = Math.min(MAX_AUDIO_MS, Date.now() - g.inicio);
+  g.recorder.onstop = () => {
+    g.stream.getTracks().forEach(t => t.stop());
+    atualizarBotoes();
+    if (!enviar || g.cancelada) return;
+    if (duracao < 500) { adicionarSistema("🎤 Segure o botão enquanto fala; solte para enviar."); return; }
+    const blob = new Blob(g.partes, { type: g.recorder.mimeType || "audio/webm" });
+    enviarAudio(blob, duracao, g.destino);
+  };
+  try { g.recorder.stop(); } catch (err) {}
+}
+
+async function enviarAudio(blob, duracao, destino) {
+  const q = new URLSearchParams({ duracao: String(duracao) });
+  if (ehPrivada(destino)) q.set("para", nomeDaChave(destino));
+  try {
+    const resp = await fetch("/api/audio?" + q, { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+    if (!resp.ok) {
+      const erro = (await resp.json().catch(() => ({}))).erro || "Não foi possível enviar o áudio.";
+      adicionar(destino, { texto: "🎤 " + erro, classe: "sistema" });
+    }
+  } catch (err) {
+    adicionar(destino, { texto: "🎤 Sem conexão: o áudio não foi enviado.", classe: "sistema" });
+  }
+}
+
+const mic = el("microfone");
+mic.addEventListener("pointerdown", iniciarGravacao);
+mic.addEventListener("pointermove", moverGravacao);
+mic.addEventListener("pointerup", () => finalizarGravacao(true));
+mic.addEventListener("pointercancel", () => finalizarGravacao(false));
+mic.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// --- Tocar ---
+function duracaoTexto(ms) { return "0:" + String(Math.max(1, Math.round((ms || 0) / 1000))).padStart(2, "0"); }
+
+function elementoAudio(m) {
+  const a = m.audio;
+  const box = document.createElement("div");
+  box.className = "audio-msg";
+  const estado = (t) => box.appendChild(Object.assign(document.createElement("span"), { className: "audio-estado", textContent: t }));
+  const tocandoEste = tocando && tocando.id === a.id;
+  if (a.unico && m.classe === "enviada") {
+    estado("🎤 Áudio " + duracaoTexto(a.duracao_ms) + " · " + (a.ouvido ? "✓✓ ouvido" : "✓ enviado (ouvir uma vez)"));
+    return box;
+  }
+  if (a.unico && a.ouvido && !tocandoEste) {
+    estado("🎧 Áudio ouvido");
+    return box;
+  }
+  const botao = document.createElement("button");
+  botao.className = "btn-audio";
+  botao.textContent = tocandoEste ? "⏸ Parar" : "▶ Ouvir " + duracaoTexto(a.duracao_ms);
+  botao.onclick = () => tocandoEste ? pararAudio() : tocarAudio(a);
+  box.appendChild(botao);
+  if (a.unico) estado(tocandoEste ? "🔊 ouvindo… (uma vez)" : "👁 ouvir uma vez");
+  return box;
+}
+
+function pararAudio() {
+  if (!tocando) return;
+  tocando.audio.pause();
+  const t = tocando;
+  tocando = null;
+  if (t.unico) URL.revokeObjectURL(t.url);
+  renderizarConversa();
+}
+
+async function tocarAudio(a) {
+  pararAudio();
+  let url = cacheAudios.get(a.id);
+  if (!url) {
+    const resp = await fetch("/api/audio/" + encodeURIComponent(a.id));
+    if (!resp.ok) {
+      const erro = (await resp.json().catch(() => ({}))).erro || "Áudio indisponível.";
+      if (resp.status === 410) a.ouvido = true;
+      adicionarSistema("🎤 " + erro);
+      renderizarConversa();
+      return;
+    }
+    url = URL.createObjectURL(await resp.blob());
+    if (!a.unico) cacheAudios.set(a.id, url);
+  }
+  if (a.unico) a.ouvido = true;   // já foi apagado no servidor; esta é a única vez
+  const audio = new Audio(url);
+  tocando = { id: a.id, audio, url, unico: a.unico };
+  audio.onended = () => { if (tocando && tocando.audio === audio) pararAudio(); };
+  renderizarConversa();
+  try { await audio.play(); } catch (err) { adicionarSistema("🎤 Não consegui tocar o áudio neste aparelho."); pararAudio(); }
+}
 
 renderizarLista();
 conectar();
