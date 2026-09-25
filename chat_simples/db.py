@@ -2,6 +2,11 @@
 
 As mensagens referenciam usuários por ID, não por apelido: trocar o apelido
 mantém o histórico e ninguém "herda" conversas de outro ao escolher o mesmo nome.
+
+Tipos de mensagem (tabela `mensagens`):
+- Mural (Geral): destinatario_id IS NULL e sala_id IS NULL — não expira.
+- Privada:      destinatario_id preenchido — expira (PRIVATE_TTL_HOURS).
+- Sala:         sala_id preenchido — expira (PRIVATE_TTL_HOURS).
 """
 import asyncpg
 
@@ -23,6 +28,10 @@ DROP INDEX IF EXISTS idx_usuarios_um_admin;
 UPDATE usuarios SET is_master = TRUE
     WHERE is_admin AND NOT EXISTS (SELECT 1 FROM usuarios WHERE is_master);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_um_master ON usuarios (is_master) WHERE is_master;
+-- Anti-flood: avisos do dia e bloqueio de envio.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avisos_flood INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avisos_dia DATE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bloqueado_ate TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS sessoes (
     token_hash TEXT PRIMARY KEY,
@@ -32,6 +41,29 @@ CREATE TABLE IF NOT EXISTS sessoes (
 );
 CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes (usuario_id);
 
+CREATE TABLE IF NOT EXISTS salas (
+    id         SERIAL PRIMARY KEY,
+    nome       TEXT NOT NULL,
+    senha_hash TEXT NOT NULL,
+    dono_id    INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_salas_nome ON salas (lower(nome));
+
+CREATE TABLE IF NOT EXISTS sala_membros (
+    sala_id    INTEGER NOT NULL REFERENCES salas(id) ON DELETE CASCADE,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    entrou_em  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (sala_id, usuario_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sala_membros_usuario ON sala_membros (usuario_id);
+
+CREATE TABLE IF NOT EXISTS contatos (
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    contato_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    PRIMARY KEY (usuario_id, contato_id)
+);
+
 CREATE TABLE IF NOT EXISTS mensagens (
     id              BIGSERIAL PRIMARY KEY,
     remetente_id    INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
@@ -40,11 +72,27 @@ CREATE TABLE IF NOT EXISTS mensagens (
     enviado_em      TIMESTAMPTZ NOT NULL DEFAULT now(),
     lida            BOOLEAN NOT NULL DEFAULT FALSE
 );
-CREATE INDEX IF NOT EXISTS idx_msg_geral ON mensagens (id) WHERE destinatario_id IS NULL;
+ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS sala_id INTEGER REFERENCES salas(id) ON DELETE CASCADE;
+DROP INDEX IF EXISTS idx_msg_geral;
+CREATE INDEX IF NOT EXISTS idx_msg_mural ON mensagens (id) WHERE destinatario_id IS NULL AND sala_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_msg_priv ON mensagens (remetente_id, destinatario_id, id);
 CREATE INDEX IF NOT EXISTS idx_msg_dest ON mensagens (destinatario_id, id);
+CREATE INDEX IF NOT EXISTS idx_msg_sala ON mensagens (sala_id, id) WHERE sala_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_msg_nao_lidas ON mensagens (destinatario_id) WHERE NOT lida;
+CREATE INDEX IF NOT EXISTS idx_msg_expira ON mensagens (enviado_em) WHERE destinatario_id IS NOT NULL OR sala_id IS NOT NULL;
+
+-- Bloqueia a API REST pública do Supabase (anon/authenticated) nestas tabelas.
+-- O chat conecta como dono das tabelas, que não é afetado pelo RLS.
+ALTER TABLE usuarios     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sessoes      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE salas        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sala_membros ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contatos     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mensagens    ENABLE ROW LEVEL SECURITY;
 """
+
+# Mensagem "viva": do Mural, ou privada/sala dentro da validade ($ttl em horas).
+FILTRO_VALIDADE = "(m.enviado_em > now() - make_interval(hours => {p}))"
 
 
 async def conectar(dsn):
@@ -108,6 +156,70 @@ async def trocar_senha(usuario_id, senha_hash):
 
 
 # ---------------------------------------------------------------
+# Sessões
+# ---------------------------------------------------------------
+async def criar_sessao(token_hash, usuario_id, dias):
+    await pool.execute(
+        "INSERT INTO sessoes (token_hash, usuario_id, expira_em) VALUES ($1, $2, now() + make_interval(days => $3))",
+        token_hash, usuario_id, dias,
+    )
+
+
+async def buscar_sessao(token_hash):
+    return await pool.fetchrow(
+        """SELECT u.id, u.apelido FROM sessoes s JOIN usuarios u ON u.id = s.usuario_id
+           WHERE s.token_hash = $1 AND s.expira_em > now()""",
+        token_hash,
+    )
+
+
+async def apagar_sessao(token_hash):
+    await pool.execute("DELETE FROM sessoes WHERE token_hash = $1", token_hash)
+
+
+async def limpar_sessoes_expiradas():
+    await pool.execute("DELETE FROM sessoes WHERE expira_em <= now()")
+
+
+# ---------------------------------------------------------------
+# Anti-flood
+# ---------------------------------------------------------------
+async def bloqueio_atual(usuario_id):
+    """Retorna o fim do bloqueio de envio, se ainda estiver valendo."""
+    return await pool.fetchval(
+        "SELECT bloqueado_ate FROM usuarios WHERE id = $1 AND bloqueado_ate > now()", usuario_id
+    )
+
+
+async def registrar_flood(usuario_id, fuso, max_avisos, minutos_trava, horas_trava_final):
+    """Conta um aviso no dia (no fuso informado) e trava o envio.
+
+    Até `max_avisos` avisos no dia: trava por `minutos_trava`.
+    Passou disso: trava por `horas_trava_final`.
+    Retorna (avisos_no_dia, bloqueado_ate).
+    """
+    row = await pool.fetchrow(
+        """WITH hoje AS (SELECT (now() AT TIME ZONE $2)::date AS d)
+           UPDATE usuarios SET
+             avisos_flood = CASE WHEN avisos_dia = hoje.d THEN avisos_flood + 1 ELSE 1 END,
+             avisos_dia = hoje.d,
+             bloqueado_ate = now() + CASE
+               WHEN (CASE WHEN avisos_dia = hoje.d THEN avisos_flood + 1 ELSE 1 END) > $3
+               THEN make_interval(hours => $5) ELSE make_interval(mins => $4) END
+           FROM hoje WHERE id = $1
+           RETURNING avisos_flood, bloqueado_ate""",
+        usuario_id, fuso, max_avisos, minutos_trava, horas_trava_final,
+    )
+    return row["avisos_flood"], row["bloqueado_ate"]
+
+
+async def liberar_bloqueio(usuario_id):
+    await pool.execute(
+        "UPDATE usuarios SET bloqueado_ate = NULL, avisos_flood = 0 WHERE id = $1", usuario_id
+    )
+
+
+# ---------------------------------------------------------------
 # Admin e Master
 # ---------------------------------------------------------------
 # Papéis: 0 = usuário, 1 = admin, 2 = master (admin com poder total).
@@ -161,69 +273,160 @@ async def definir_admin(usuario_id, admin):
 
 
 # ---------------------------------------------------------------
-# Sessões
+# Contatos (fixados)
 # ---------------------------------------------------------------
-async def criar_sessao(token_hash, usuario_id, dias):
-    await pool.execute(
-        "INSERT INTO sessoes (token_hash, usuario_id, expira_em) VALUES ($1, $2, now() + make_interval(days => $3))",
-        token_hash, usuario_id, dias,
+async def listar_contatos(usuario_id):
+    rows = await pool.fetch(
+        """SELECT u.apelido FROM contatos c JOIN usuarios u ON u.id = c.contato_id
+           WHERE c.usuario_id = $1 ORDER BY lower(u.apelido)""",
+        usuario_id,
     )
+    return [r["apelido"] for r in rows]
 
 
-async def buscar_sessao(token_hash):
+async def fixar_contato(usuario_id, contato_id, fixo):
+    if fixo:
+        await pool.execute(
+            "INSERT INTO contatos (usuario_id, contato_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            usuario_id, contato_id,
+        )
+    else:
+        await pool.execute("DELETE FROM contatos WHERE usuario_id = $1 AND contato_id = $2", usuario_id, contato_id)
+
+
+# ---------------------------------------------------------------
+# Salas
+# ---------------------------------------------------------------
+async def criar_sala(nome, senha_hash, dono_id):
+    """Cria a sala com o dono como membro. Retorna o id, ou None se o nome existir."""
+    async with pool.acquire() as conn, conn.transaction():
+        sala_id = await conn.fetchval(
+            "INSERT INTO salas (nome, senha_hash, dono_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
+            nome, senha_hash, dono_id,
+        )
+        if sala_id:
+            await conn.execute("INSERT INTO sala_membros (sala_id, usuario_id) VALUES ($1, $2)", sala_id, dono_id)
+        return sala_id
+
+
+async def contar_salas_do_dono(dono_id):
+    return await pool.fetchval("SELECT COUNT(*) FROM salas WHERE dono_id = $1", dono_id)
+
+
+async def buscar_sala(nome):
     return await pool.fetchrow(
-        """SELECT u.id, u.apelido FROM sessoes s JOIN usuarios u ON u.id = s.usuario_id
-           WHERE s.token_hash = $1 AND s.expira_em > now()""",
-        token_hash,
+        """SELECT s.id, s.nome, s.senha_hash, s.dono_id, u.apelido AS dono
+           FROM salas s JOIN usuarios u ON u.id = s.dono_id WHERE lower(s.nome) = lower($1)""",
+        nome,
     )
 
 
-async def apagar_sessao(token_hash):
-    await pool.execute("DELETE FROM sessoes WHERE token_hash = $1", token_hash)
+async def listar_salas(usuario_id):
+    return await pool.fetch(
+        """SELECT s.nome, u.apelido AS dono,
+                  (SELECT COUNT(*) FROM sala_membros sm WHERE sm.sala_id = s.id) AS membros,
+                  EXISTS (SELECT 1 FROM sala_membros sm WHERE sm.sala_id = s.id AND sm.usuario_id = $1) AS membro
+           FROM salas s JOIN usuarios u ON u.id = s.dono_id
+           ORDER BY lower(s.nome)""",
+        usuario_id,
+    )
 
 
-async def limpar_sessoes_expiradas():
-    await pool.execute("DELETE FROM sessoes WHERE expira_em <= now()")
+async def eh_membro(sala_id, usuario_id):
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM sala_membros WHERE sala_id = $1 AND usuario_id = $2", sala_id, usuario_id
+    ))
+
+
+async def adicionar_membro(sala_id, usuario_id):
+    """Retorna False se já era membro."""
+    resultado = await pool.execute(
+        "INSERT INTO sala_membros (sala_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        sala_id, usuario_id,
+    )
+    return resultado == "INSERT 0 1"
+
+
+async def remover_membro(sala_id, usuario_id):
+    resultado = await pool.execute(
+        "DELETE FROM sala_membros WHERE sala_id = $1 AND usuario_id = $2", sala_id, usuario_id
+    )
+    return resultado == "DELETE 1"
+
+
+async def membros_da_sala(sala_id):
+    rows = await pool.fetch("SELECT usuario_id FROM sala_membros WHERE sala_id = $1", sala_id)
+    return [r["usuario_id"] for r in rows]
+
+
+async def apagar_sala(sala_id):
+    await pool.execute("DELETE FROM salas WHERE id = $1", sala_id)
 
 
 # ---------------------------------------------------------------
 # Mensagens
 # ---------------------------------------------------------------
-async def salvar_mensagem(remetente_id, destinatario_id, texto):
+async def salvar_mensagem(remetente_id, destinatario_id, texto, sala_id=None):
     return await pool.fetchval(
-        "INSERT INTO mensagens (remetente_id, destinatario_id, texto) VALUES ($1, $2, $3) RETURNING enviado_em",
-        remetente_id, destinatario_id, texto,
+        """INSERT INTO mensagens (remetente_id, destinatario_id, sala_id, texto)
+           VALUES ($1, $2, $3, $4) RETURNING enviado_em""",
+        remetente_id, destinatario_id, sala_id, texto,
     )
 
 
-async def carregar_historico(usuario_id, limite_geral=50, limite_privadas=500):
-    geral = await pool.fetch(
+async def carregar_historico(usuario_id, ttl_horas, limite_mural=50, limite_privadas=500, limite_salas=500):
+    mural = await pool.fetch(
         """SELECT * FROM (
              SELECT m.id, u.apelido AS remetente, m.texto, m.enviado_em
              FROM mensagens m JOIN usuarios u ON u.id = m.remetente_id
-             WHERE m.destinatario_id IS NULL ORDER BY m.id DESC LIMIT $1
+             WHERE m.destinatario_id IS NULL AND m.sala_id IS NULL ORDER BY m.id DESC LIMIT $1
            ) t ORDER BY id""",
-        limite_geral,
+        limite_mural,
     )
     privadas = await pool.fetch(
-        """SELECT * FROM (
-             SELECT m.id, r.apelido AS remetente, d.apelido AS destinatario, m.texto, m.enviado_em
-             FROM mensagens m
-             JOIN usuarios r ON r.id = m.remetente_id
-             JOIN usuarios d ON d.id = m.destinatario_id
-             WHERE m.remetente_id = $1 OR m.destinatario_id = $1
-             ORDER BY m.id DESC LIMIT $2
-           ) t ORDER BY id""",
-        usuario_id, limite_privadas,
+        f"""SELECT * FROM (
+              SELECT m.id, r.apelido AS remetente, d.apelido AS destinatario, m.texto, m.enviado_em
+              FROM mensagens m
+              JOIN usuarios r ON r.id = m.remetente_id
+              JOIN usuarios d ON d.id = m.destinatario_id
+              WHERE (m.remetente_id = $1 OR m.destinatario_id = $1) AND {FILTRO_VALIDADE.format(p="$3")}
+              ORDER BY m.id DESC LIMIT $2
+            ) t ORDER BY id""",
+        usuario_id, limite_privadas, ttl_horas,
     )
-    return geral, privadas
+    salas = await pool.fetch(
+        f"""SELECT * FROM (
+              SELECT m.id, s.nome AS sala, u.apelido AS remetente, m.texto, m.enviado_em
+              FROM mensagens m
+              JOIN salas s ON s.id = m.sala_id
+              JOIN sala_membros sm ON sm.sala_id = m.sala_id AND sm.usuario_id = $1
+              JOIN usuarios u ON u.id = m.remetente_id
+              WHERE {FILTRO_VALIDADE.format(p="$3")}
+              ORDER BY m.id DESC LIMIT $2
+            ) t ORDER BY id""",
+        usuario_id, limite_salas, ttl_horas,
+    )
+    return mural, privadas, salas
 
 
-async def contar_nao_lidas(usuario_id):
+async def historico_sala(sala_id, ttl_horas, limite=200):
+    return await pool.fetch(
+        f"""SELECT * FROM (
+              SELECT m.id, u.apelido AS remetente, m.texto, m.enviado_em
+              FROM mensagens m JOIN usuarios u ON u.id = m.remetente_id
+              WHERE m.sala_id = $1 AND {FILTRO_VALIDADE.format(p="$3")}
+              ORDER BY m.id DESC LIMIT $2
+            ) t ORDER BY id""",
+        sala_id, limite, ttl_horas,
+    )
+
+
+async def contar_nao_lidas(usuario_id, ttl_horas):
     rows = await pool.fetch(
-        """SELECT u.apelido, COUNT(*) FROM mensagens m JOIN usuarios u ON u.id = m.remetente_id
-           WHERE m.destinatario_id = $1 AND NOT m.lida GROUP BY u.apelido""",
-        usuario_id,
+        f"""SELECT u.apelido, COUNT(*) FROM mensagens m JOIN usuarios u ON u.id = m.remetente_id
+            WHERE m.destinatario_id = $1 AND NOT m.lida AND {FILTRO_VALIDADE.format(p="$2")}
+            GROUP BY u.apelido""",
+        usuario_id, ttl_horas,
     )
     return {r[0]: r[1] for r in rows}
 
@@ -235,8 +438,19 @@ async def marcar_como_lidas(destinatario_id, remetente_id):
     )
 
 
-async def apagar_conversa_geral():
-    await pool.execute("DELETE FROM mensagens WHERE destinatario_id IS NULL")
+async def apagar_expiradas(ttl_horas):
+    """Apaga privadas e de salas mais velhas que ttl_horas. Retorna quantas."""
+    resultado = await pool.execute(
+        """DELETE FROM mensagens
+           WHERE (destinatario_id IS NOT NULL OR sala_id IS NOT NULL)
+             AND enviado_em <= now() - make_interval(hours => $1)""",
+        ttl_horas,
+    )
+    return int(resultado.split()[-1])
+
+
+async def apagar_mural():
+    await pool.execute("DELETE FROM mensagens WHERE destinatario_id IS NULL AND sala_id IS NULL")
 
 
 async def apagar_conversa_privada(a, b):
@@ -245,6 +459,10 @@ async def apagar_conversa_privada(a, b):
            WHERE (remetente_id = $1 AND destinatario_id = $2) OR (remetente_id = $2 AND destinatario_id = $1)""",
         a, b,
     )
+
+
+async def apagar_mensagens_da_sala(sala_id):
+    await pool.execute("DELETE FROM mensagens WHERE sala_id = $1", sala_id)
 
 
 async def apagar_mensagens_de(usuario_id):

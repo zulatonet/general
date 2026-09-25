@@ -1,7 +1,8 @@
 # Chat — Sala de Bate-Papo
 
-Chat em tempo real com mural **Geral**, conversas **privadas**, notificação de
-não lidas e comandos de admin. Versão para rodar em container (Easypanel),
+Chat em tempo real com **Mural de Recados** (só Admins escrevem), conversas
+**privadas** e **salas com senha** que expiram em 24h, contatos fixados, busca,
+anti-flood e comandos de admin. Versão para rodar em container (Easypanel),
 com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 (Supabase, Neon etc.).
 
@@ -30,6 +31,8 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `PORT` | não | `8080` | Porta HTTP/WebSocket |
 | `ADMIN_RESET_MINUTES` | não | `60` | Minutos offline antes de permitir `/admin reset` |
 | `SESSION_DAYS` | não | `30` | Validade da sessão (cookie) |
+| `PRIVATE_TTL_HOURS` | não | `24` | Horas até mensagens privadas e de salas serem apagadas |
+| `TIMEZONE` | não | `America/Sao_Paulo` | Fuso usado para contar os avisos de flood "do dia" |
 | `LOG_LEVEL` | não | `INFO` | Nível de log (saída no stdout) |
 
 Veja `.env.example`.
@@ -44,6 +47,13 @@ Veja `.env.example`.
 
 As tabelas são criadas automaticamente na primeira execução. Qualquer outro
 PostgreSQL funciona do mesmo jeito (Neon, Postgres do próprio Easypanel...).
+
+**Segurança no Supabase:** o chat liga o **RLS (Row Level Security)** em todas
+as tabelas, sem políticas. Isso bloqueia a API REST pública do Supabase (quem
+tiver a `anon key` não lê nem altera nada), e o chat continua funcionando
+porque conecta como dono das tabelas. No painel as tabelas deixam de aparecer
+como *Unrestricted*. O chat **não usa** a `anon key` nem a `service_role key`,
+então não cadastre essas chaves no Easypanel.
 
 ## Deploy no Easypanel
 
@@ -79,20 +89,66 @@ python chat.py        # http://localhost:8080
 - A sessão fica num cookie `HttpOnly` válido por `SESSION_DAYS` dias.
 - Esqueceu a senha? O admin redefine com `/senha Usuario NovaSenha`.
 
+## Regras do chat
+
+### Mural de Recados
+- Todo mundo lê; **só Admins e o Master escrevem**.
+- Recados do Mural **não expiram**.
+- Quem não é admin pode digitar comandos (`/...`) no Mural.
+
+### Mensagens privadas e salas
+- Ficam no banco por **`PRIVATE_TTL_HOURS` (24h)** e depois são apagadas
+  automaticamente (limpeza a cada 5 minutos). O aviso aparece no topo de
+  cada conversa privada e de sala.
+
+### Anti-flood
+- Mais de **8 mensagens em 10 segundos** conta **1 aviso** e trava o envio por
+  **1 minuto**.
+- São **3 avisos por dia** (no fuso `TIMEZONE`). No 4º, o envio fica travado
+  por **24 horas**.
+- Enquanto travado, a pessoa ainda lê e usa comandos, mas não envia mensagens.
+- Um Admin pode destravar com `/liberar Nome`.
+
+### Salas com senha
+- Qualquer um cria uma sala (botão **+ Criar**) com nome e senha. Limite de 5
+  salas por pessoa. A sala aparece para todos.
+- Ao clicar numa sala em que não está, a pessoa vê quem criou e pode:
+  - **Entrar com senha**, direto; ou
+  - **Solicitar entrada**: o pedido chega no privado do dono.
+- O dono aceita com `/aceitar Sala Nome`, em qualquer conversa, ou só com
+  `/aceitar Sala` dentro do privado com a pessoa. Também pode incluir alguém
+  sem pedido.
+- Mensagens da sala só chegam aos membros e também expiram em 24h.
+
+### Contatos e busca
+- A barra lateral tem **busca** (pessoas e salas) e três seções: **Salas**,
+  **Contatos** (pessoas fixadas com 📌, no topo) e **Todos**.
+- Os contatos fixados ficam salvos na conta.
+- Sem busca, "Todos" mostra no máximo 200 pessoas (online primeiro); a busca
+  encontra qualquer uma.
+- No celular a barra lateral abre pelo botão ☰.
+
 ## Comandos
 
 Interceptados no servidor e nunca exibidos no chat. Comandos inválidos ou de
-quem não tem permissão são ignorados em silêncio.
+quem não tem permissão são ignorados em silêncio. `/help` mostra só os
+comandos que a pessoa pode usar.
 
 ### Papéis
 
 - **Master** 👑: um só. É quem assumiu com `/admin SENHA`. Pode tudo, inclusive
   promover e revogar Admins.
 - **Admin** 🛡️: vários. Modera o chat, mas não pode agir sobre o Master nem
-  sobre outros Admins (`/nome`, `/senha`, `/apagar Usuario`).
+  sobre outros Admins (`/nome`, `/senha`, `/liberar`, `/apagar Usuario`).
 
 | Comando | Quem pode | Efeito |
 |---|---|---|
+| `/aceitar Sala Nome` | Dono da sala | Coloca Nome na sala (no privado com a pessoa, basta `/aceitar Sala`) |
+| `/remover Sala Nome` | Dono da sala ou Admin | Tira Nome da sala |
+| `/sairsala Sala` | Membro | Sai da sala (também pelo botão "Sair da sala") |
+| `/apagarsala Sala` | Dono da sala ou Admin | Apaga a sala e as mensagens dela |
+| `/apagar` (dentro da sala) | Dono da sala ou Admin | Apaga as mensagens da sala |
+| `/help` | Todos | Lista os comandos disponíveis para você |
 | `/admin SENHA` | Qualquer um (com a senha) | Vira Master, se ainda não houver um |
 | `/admin reset SENHA` | Qualquer um (com a senha) | Tira o Master atual (se offline há `ADMIN_RESET_MINUTES`); ele continua Admin |
 | `/admin promover Nome` | Master | Torna Nome um Admin |
@@ -101,10 +157,10 @@ quem não tem permissão são ignorados em silêncio.
 | `/admin lista` | Admin | Mostra o Master e os Admins |
 | `/nome Usuario NovoNome` | Admin | Troca o nome de Usuario, mantendo o histórico |
 | `/senha Usuario NovaSenha` | Admin | Redefine a senha e derruba as sessões dele |
-| `/apagar` | Admin | Apaga a conversa aberta (Geral ou privada) |
+| `/liberar Usuario` | Admin | Destrava quem foi bloqueado por flood |
+| `/apagar` | Admin | Apaga a conversa aberta (Mural ou privada) |
 | `/apagar Usuario` | Admin | Apaga todas as mensagens de Usuario |
 | `/apagar total` | Master | Apaga todas as mensagens (mantém usuários) |
-| `/help` | Admin | Lista os comandos (o Master vê também os dele) |
 
 > Ao atualizar de uma versão anterior, o admin existente vira Master
 > automaticamente.
@@ -113,8 +169,11 @@ quem não tem permissão são ignorados em silêncio.
 
 - Mensagens ligadas ao **ID** do usuário, e não ao apelido: ninguém herda
   conversas de outra pessoa.
-- Rate limiting: 10 logins / 5 min por IP; 20 mensagens / 10 s por usuário;
-  5 tentativas de senha de admin / 15 min por usuário.
+- Rate limiting: 10 logins / 5 min por IP; 20 ações / 10 s por usuário;
+  5 tentativas de senha de admin ou de sala / 15 min por usuário; 1 pedido de
+  entrada por sala a cada 10 min.
+- Anti-flood com avisos e travas (ver "Regras do chat").
+- RLS ligado em todas as tabelas (bloqueia a API pública do Supabase).
 - Limites: mensagem de até 2000 caracteres; frame WebSocket de até 16 KB.
 - Checagem de `Origin` no login e no WebSocket (bloqueia uso a partir de outros sites).
 - Cabeçalhos de segurança (CSP, `X-Frame-Options`, `nosniff`).
@@ -122,9 +181,15 @@ quem não tem permissão são ignorados em silêncio.
 
 ## Banco de dados
 
-- `usuarios` (id, apelido, senha_hash, is_admin, is_master, criado_em, ultimo_acesso)
+- `usuarios` (id, apelido, senha_hash, is_admin, is_master, avisos_flood, avisos_dia, bloqueado_ate, criado_em, ultimo_acesso)
 - `sessoes` (token_hash, usuario_id, criado_em, expira_em)
-- `mensagens` (id, remetente_id, destinatario_id — NULL = Geral —, texto, enviado_em, lida)
+- `salas` (id, nome, senha_hash, dono_id, criado_em)
+- `sala_membros` (sala_id, usuario_id, entrou_em)
+- `contatos` (usuario_id, contato_id): pessoas fixadas
+- `mensagens` (id, remetente_id, destinatario_id, sala_id, texto, enviado_em, lida)
+  - Mural: `destinatario_id` e `sala_id` nulos (não expira)
+  - Privada: `destinatario_id` preenchido (expira)
+  - Sala: `sala_id` preenchido (expira)
 
 ## Diferenças para a versão home lab
 

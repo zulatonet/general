@@ -14,114 +14,215 @@ body {
   display: flex; flex-direction: column;
   font-size: 16px;
 }
-#topo { padding: 10px 12px; background: #0a0a12; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
-#meunome { font-weight: bold; font-size: 15px; display: flex; align-items: center; gap: 6px; }
-#sair { background: none; border: 1px solid #444; color: #aac; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-#corpo { flex: 1; display: flex; overflow: hidden; min-height: 0; }
-#sidebar { width: 150px; background: #14141f; padding: 8px; overflow-y: auto; flex-shrink: 0; }
-#sidebar h3 { margin: 0 0 8px 0; font-size: 13px; color: #888; text-transform: uppercase; }
-.usuario { padding: 10px 8px; cursor: pointer; border-radius: 8px; margin-bottom: 4px; font-size: 14px; word-break: break-word; line-height: 1.2; user-select: none; display: flex; align-items: center; gap: 6px; }
-.usuario:active { background: #2a2a3f; }
-.usuario.selecionado { background: #4a4a8f; }
-.usuario.geral { background: #2a5a3f; }
-.usuario.geral.selecionado { background: #3a8a5f; }
+button { font-family: inherit; }
+#topo { padding: 10px 12px; background: #0a0a12; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+#topo-esq { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#menu { display: none; position: relative; background: none; border: 1px solid #444; color: #eee; border-radius: 8px; padding: 4px 10px; font-size: 18px; cursor: pointer; }
+#menu .ponto { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: #ff5252; }
+#meunome { font-weight: bold; font-size: 15px; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sair { background: none; border: 1px solid #444; color: #aac; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; flex-shrink: 0; }
+#corpo { flex: 1; display: flex; overflow: hidden; min-height: 0; position: relative; }
+
+/* Barra lateral */
+#sidebar { width: 250px; background: #14141f; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+#busca-caixa { padding: 8px; flex-shrink: 0; }
+#busca { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #333; background: #1e1e2f; color: #eee; font-size: 14px; }
+#lista { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.secao { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: .03em; }
+.secao button { background: #2a2a3f; border: none; color: #cce; border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; text-transform: none; }
+.dica-vazia { font-size: 12px; color: #667; padding: 2px 8px 6px; }
+.item { padding: 9px 8px; cursor: pointer; border-radius: 8px; margin-bottom: 3px; font-size: 14px; line-height: 1.2; user-select: none; display: flex; align-items: center; gap: 7px; }
+.item:hover { background: #1f1f30; }
+.item.selecionado { background: #4a4a8f; }
+.item.mural { background: #2a5a3f; }
+.item.mural.selecionado { background: #3a8a5f; }
+.item .nome-item { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item.fora { color: #99a; }
+.item .sub { font-size: 11px; color: #778; }
+.pino { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: .25; flex-shrink: 0; }
+.pino.fixo { opacity: 1; }
+.item:hover .pino { opacity: .7; }
+.item:hover .pino.fixo { opacity: 1; }
 .bolinha { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .bolinha.online { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
 .bolinha.offline { background: #f44336; }
 .bolinha.conectando { background: #ffb300; }
-.badge-nao-lidas { background: #ff5252; color: white; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 1px 6px; margin-left: auto; }
+.badge-nao-lidas { background: #ff5252; color: white; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 1px 6px; flex-shrink: 0; }
+.mais { font-size: 12px; color: #778; padding: 6px 8px; }
+
+/* Conversa */
 #chat { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-#chat-titulo { padding: 8px 12px; background: #0a0a12; font-size: 14px; color: #aac; border-bottom: 1px solid #222; flex-shrink: 0; }
+#chat-titulo { padding: 8px 12px; background: #0a0a12; border-bottom: 1px solid #222; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+#titulo-textos { flex: 1; min-width: 0; }
+#titulo-nome { font-size: 15px; color: #dde; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#titulo-sub { font-size: 12px; color: #889; margin-top: 2px; }
+#titulo-acao { background: none; border: 1px solid #553; color: #ec8; border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; flex-shrink: 0; }
 #mensagens { flex: 1; padding: 12px; overflow-y: auto; }
 .msg { margin-bottom: 8px; padding: 10px 14px; border-radius: 12px; max-width: 85%; font-size: 16px; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
 .msg.enviada { background: #4a4a8f; margin-left: auto; }
 .msg.recebida { background: #2a2a3f; }
-.msg.sistema { background: #333; color: #aaa; font-size: 13px; text-align: center; margin: 8px auto; max-width: 100%; }
+.msg.sistema { background: #333; color: #bbb; font-size: 13px; text-align: center; margin: 8px auto; max-width: 100%; }
 .msg.confirmacao { background: #2a5a3f; color: #cfc; font-size: 13px; text-align: left; margin: 8px auto; max-width: 100%; font-family: monospace; }
 .msg .nome { font-weight: bold; font-size: 13px; color: #aac; margin-bottom: 2px; }
 .msg .hora { font-size: 11px; color: #999; margin-top: 4px; }
+.vazio { text-align: center; color: #667; font-size: 13px; margin-top: 30px; }
 #form { display: flex; padding: 8px; background: #14141f; gap: 6px; flex-shrink: 0; }
 #texto { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; font-size: 16px; background: #1e1e2f; color: #eee; min-width: 0; }
 #texto:disabled { opacity: 0.5; }
 #enviar { padding: 12px 16px; border: none; border-radius: 8px; background: #4a4a8f; color: white; cursor: pointer; font-size: 16px; font-weight: bold; }
 #enviar:disabled { opacity: 0.5; }
-#modal-nome {
+
+/* Modais */
+.modal {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
   z-index: 9999;
 }
-#modal-nome .caixa {
-  background: #2a2a3f; padding: 30px; border-radius: 16px; max-width: 90%;
-  width: 400px; text-align: center;
+.modal .caixa {
+  background: #2a2a3f; padding: 26px; border-radius: 16px; max-width: 90%;
+  width: 400px; text-align: center; position: relative;
 }
-#modal-nome h2 { margin: 0 0 8px 0; font-size: 20px; }
-#modal-nome .dica { color: #99a; font-size: 13px; margin-bottom: 16px; }
-#modal-nome input {
+.modal h2 { margin: 0 0 8px 0; font-size: 20px; }
+.modal .dica { color: #99a; font-size: 13px; margin-bottom: 16px; }
+.modal input {
   width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #444;
   font-size: 16px; background: #1e1e2f; color: #eee; margin-bottom: 12px;
 }
-#modal-nome button {
+.modal button.principal {
   width: 100%; padding: 12px; border: none; border-radius: 8px;
   background: #4a4a8f; color: white; font-size: 16px; font-weight: bold; cursor: pointer;
 }
-#modal-nome button:disabled { opacity: 0.5; }
-#modal-nome .erro { color: #ff6b6b; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+.modal button.secundario {
+  width: 100%; padding: 12px; border: 1px solid #4a4a8f; border-radius: 8px;
+  background: none; color: #ccf; font-size: 15px; font-weight: bold; cursor: pointer;
+}
+.modal button:disabled { opacity: 0.5; }
+.modal .fechar { position: absolute; top: 10px; right: 12px; background: none; border: none; color: #99a; font-size: 20px; cursor: pointer; }
+.modal .erro { color: #ff6b6b; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+.modal .info { color: #8c8; font-size: 13px; min-height: 18px; margin-top: 10px; }
+.modal .ou { color: #667; font-size: 12px; margin: 14px 0; }
 .escondido { display: none !important; }
+
+/* Celular: barra lateral vira menu deslizante */
+#veu { display: none; }
+@media (max-width: 700px) {
+  #menu { display: block; }
+  #sidebar {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 50;
+    transform: translateX(-100%); transition: transform .2s ease; box-shadow: 4px 0 20px rgba(0,0,0,.5);
+  }
+  #sidebar.aberto { transform: translateX(0); }
+  #veu.aberto { display: block; position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 40; }
+}
 </style>
 </head>
 <body>
-<div id="modal-nome" class="escondido">
+<div id="modal-nome" class="modal escondido">
   <form class="caixa" id="modal-form">
     <h2>Entrar no chat</h2>
     <div class="dica">Primeira vez? Escolha um nome e uma senha — a conta é criada na hora.</div>
     <div class="erro" id="modal-erro"></div>
     <input id="modal-input" placeholder="Seu nome" maxlength="20" autocomplete="username" autocapitalize="off">
     <input id="modal-senha" type="password" placeholder="Senha (mínimo 6 caracteres)" maxlength="128" autocomplete="current-password">
-    <button id="modal-btn" type="submit">Entrar</button>
+    <button id="modal-btn" class="principal" type="submit">Entrar</button>
   </form>
 </div>
 
+<div id="modal-criar" class="modal escondido">
+  <form class="caixa" id="criar-form">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2>Criar sala</h2>
+    <div class="dica">A sala aparece para todos. Quem tiver a senha entra direto; os outros pedem para você.</div>
+    <div class="erro" id="criar-erro"></div>
+    <input id="criar-nome" placeholder="Nome da sala (sem espaços)" maxlength="20" autocomplete="off" autocapitalize="off">
+    <input id="criar-senha" type="password" placeholder="Senha da sala (mínimo 4)" maxlength="128" autocomplete="new-password">
+    <button class="principal" type="submit">Criar</button>
+  </form>
+</div>
+
+<div id="modal-sala" class="modal escondido">
+  <div class="caixa">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2 id="sala-titulo">🔒 Sala</h2>
+    <div class="dica" id="sala-dica"></div>
+    <div class="erro" id="sala-erro"></div>
+    <form id="sala-form">
+      <input id="sala-senha" type="password" placeholder="Senha da sala" maxlength="128" autocomplete="off">
+      <button class="principal" type="submit">Entrar com senha</button>
+    </form>
+    <div class="ou">— ou —</div>
+    <button class="secundario" id="sala-solicitar">Solicitar entrada</button>
+    <div class="info" id="sala-info"></div>
+  </div>
+</div>
+
 <div id="topo">
-<div id="meunome"><span id="status" class="bolinha conectando"></span><span id="nome-texto">Conectando...</span></div>
-<button id="sair" class="escondido">Sair</button>
+  <div id="topo-esq">
+    <button id="menu" aria-label="Conversas">☰<span class="ponto escondido" id="menu-ponto"></span></button>
+    <div id="meunome"><span id="status" class="bolinha conectando"></span><span id="nome-texto">Conectando...</span></div>
+  </div>
+  <button id="sair" class="escondido">Sair</button>
 </div>
 <div id="corpo">
-<div id="sidebar">
-<h3>Usuários</h3>
-<div id="lista"></div>
-</div>
-<div id="chat">
-<div id="chat-titulo">📢 Geral</div>
-<div id="mensagens"></div>
-<div id="form">
-<input id="texto" placeholder="Mensagem para todos..." disabled autocomplete="off" maxlength="2000">
-<button id="enviar" disabled>Enviar</button>
-</div>
-</div>
+  <div id="veu"></div>
+  <div id="sidebar">
+    <div id="busca-caixa"><input id="busca" placeholder="🔍 Buscar pessoas e salas" autocomplete="off"></div>
+    <div id="lista"></div>
+  </div>
+  <div id="chat">
+    <div id="chat-titulo">
+      <div id="titulo-textos"><div id="titulo-nome">📢 Mural de Recados</div><div id="titulo-sub"></div></div>
+      <button id="titulo-acao" class="escondido"></button>
+    </div>
+    <div id="mensagens"></div>
+    <div id="form">
+      <input id="texto" placeholder="Mensagem..." disabled autocomplete="off" maxlength="2000">
+      <button id="enviar" disabled>Enviar</button>
+    </div>
+  </div>
 </div>
 <script>
 // Limpa dados da versão antiga (identificação por device_id)
 try { localStorage.removeItem("chat_device_id"); localStorage.removeItem("chat_nome"); } catch (e) {}
 
+const MURAL = "MURAL";
+const LIMITE_LISTA = 200;   // máximo de pessoas renderizadas em "Todos" sem busca
+const ADMIN = 1, MASTER = 2;
+
 let ws = null;
 let meuNome = "";
-let selecionado = "GERAL";
-let conversas = { "GERAL": [] };
+let meuPapel = 0;
+let ttlHoras = 24;
+let bloqueadoAte = null;
+let timerDesbloqueio = null;
+let selecionado = MURAL;
+let conversas = {};
 let naoLidas = {};
-let ultimosUsuarios = [];
+let usuarios = new Map();   // apelido -> online
+let contatos = new Set();
+let salas = new Map();      // nome -> {nome, dono, membros, membro}
+let salaModal = null;
 let tentativas = 0;
 let timerReconexao = null;
 
 const el = (id) => document.getElementById(id);
+const chaveUsuario = (nome) => "u:" + nome;
+const chaveSala = (nome) => "s:" + nome;
+const ehSala = (k) => k.startsWith("s:");
+const ehPrivada = (k) => k.startsWith("u:");
+const nomeDaChave = (k) => k.slice(2);
+const conectado = () => ws && ws.readyState === WebSocket.OPEN;
+
+function enviarWs(dados) { if (conectado()) ws.send(JSON.stringify(dados)); }
 
 function definirStatus(estado, texto) {
   el("status").className = "bolinha " + estado;
   el("nome-texto").textContent = texto;
 }
 
-function habilitarEnvio(ativo) {
-  el("texto").disabled = !ativo;
-  el("enviar").disabled = !ativo;
+function atualizarNomeTopo() {
+  const selo = meuPapel === MASTER ? " 👑" : meuPapel === ADMIN ? " 🛡️" : "";
+  definirStatus("online", meuNome + selo);
 }
 
 function mostrarLogin(erro) {
@@ -129,10 +230,25 @@ function mostrarLogin(erro) {
   el("modal-nome").classList.remove("escondido");
   el("sair").classList.add("escondido");
   definirStatus("offline", "Desconectado");
-  habilitarEnvio(false);
+  atualizarEntrada();
   el("modal-input").focus();
 }
 
+function paraMsgs(lista) {
+  return (lista || []).map(m => ({
+    remetente: m.remetente, texto: m.texto, hora: m.hora,
+    classe: m.remetente === meuNome ? "enviada" : "recebida"
+  }));
+}
+
+function empurrar(chave, m) {
+  if (!conversas[chave]) conversas[chave] = [];
+  conversas[chave].push(m);
+}
+
+// ---------------------------------------------------------------
+// Conexão
+// ---------------------------------------------------------------
 function conectar() {
   clearTimeout(timerReconexao);
   const protocolo = location.protocol === "https:" ? "wss:" : "ws:";
@@ -140,66 +256,13 @@ function conectar() {
   definirStatus("conectando", "Conectando...");
 
   ws.onmessage = (event) => {
-    const dados = JSON.parse(event.data);
-    if (dados.tipo === "bemvindo") {
-      tentativas = 0;
-      meuNome = dados.nome;
-      definirStatus("online", "Você é: " + meuNome);
-      el("modal-nome").classList.add("escondido");
-      el("sair").classList.remove("escondido");
-      conversas = { "GERAL": [] };
-      naoLidas = {};
-      conversas["GERAL"] = dados.historico.geral.map(m => ({
-        remetente: m.remetente, texto: m.texto, hora: m.hora,
-        classe: m.remetente === meuNome ? "enviada" : "recebida"
-      }));
-      for (const [interlocutor, msgs] of Object.entries(dados.historico.privadas || {})) {
-        conversas[interlocutor] = msgs.map(m => ({
-          remetente: m.remetente, texto: m.texto, hora: m.hora,
-          classe: m.remetente === meuNome ? "enviada" : "recebida"
-        }));
-      }
-      for (const [interlocutor, qtd] of Object.entries(dados.nao_lidas || {})) {
-        naoLidas[interlocutor] = qtd;
-      }
-      selecionar(conversas[selecionado] || selecionado === "GERAL" ? selecionado : "GERAL");
-    } else if (dados.tipo === "erro") {
-      adicionarSistema(dados.mensagem);
-    } else if (dados.tipo === "usuarios") {
-      renderizarUsuarios(dados.usuarios);
-    } else if (dados.tipo === "msg") {
-      const interlocutor = dados.privado ? dados.de : "GERAL";
-      if (!conversas[interlocutor]) conversas[interlocutor] = [];
-      conversas[interlocutor].push({
-        remetente: dados.de, texto: dados.texto, hora: dados.hora,
-        classe: dados.de === meuNome ? "enviada" : "recebida"
-      });
-      if (selecionado === interlocutor) {
-        renderizarConversa();
-        if (dados.privado) ws.send(JSON.stringify({tipo: "marcar_lidas", interlocutor: interlocutor}));
-      } else if (dados.privado) {
-        naoLidas[interlocutor] = (naoLidas[interlocutor] || 0) + 1;
-        tocarSom();
-        renderizarUsuarios();
-      }
-    } else if (dados.tipo === "msg_enviada") {
-      const interlocutor = dados.para;
-      if (!conversas[interlocutor]) conversas[interlocutor] = [];
-      conversas[interlocutor].push({ remetente: meuNome, texto: dados.texto, hora: dados.hora, classe: "enviada" });
-      if (selecionado === interlocutor) renderizarConversa();
-    } else if (dados.tipo === "renomeado") {
-      renomear(dados.de, dados.para);
-    } else if (dados.tipo === "apagado") {
-      aplicarApagado(dados);
-    } else if (dados.tipo === "sistema") {
-      adicionarSistema(dados.mensagem);
-    } else if (dados.tipo === "comando_ok") {
-      adicionarConfirmacao(dados.mensagem);
-    }
+    const d = JSON.parse(event.data);
+    const trata = TRATADORES[d.tipo];
+    if (trata) trata(d);
   };
 
   ws.onclose = (event) => {
-    habilitarEnvio(false);
+    atualizarEntrada();
     if (event.code === 4001) {
       ws = null;
       mostrarLogin(meuNome ? "Sua sessão foi encerrada. Entre novamente." : "");
@@ -214,6 +277,116 @@ function conectar() {
   };
 }
 
+const TRATADORES = {
+  bemvindo(d) {
+    tentativas = 0;
+    meuNome = d.nome;
+    meuPapel = d.papel;
+    ttlHoras = d.ttl_horas;
+    definirBloqueio(d.bloqueado_ate);
+    atualizarNomeTopo();
+    el("modal-nome").classList.add("escondido");
+    el("sair").classList.remove("escondido");
+    conversas = { [MURAL]: paraMsgs(d.historico.mural) };
+    for (const [quem, msgs] of Object.entries(d.historico.privadas || {})) conversas[chaveUsuario(quem)] = paraMsgs(msgs);
+    for (const [sala, msgs] of Object.entries(d.historico.salas || {})) conversas[chaveSala(sala)] = paraMsgs(msgs);
+    naoLidas = {};
+    for (const [quem, qtd] of Object.entries(d.nao_lidas || {})) naoLidas[chaveUsuario(quem)] = qtd;
+    usuarios = new Map(d.usuarios.map(u => [u.apelido, u.online]));
+    contatos = new Set(d.contatos);
+    salas = new Map(d.salas.map(s => [s.nome, s]));
+    const aindaExiste = selecionado === MURAL || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
+    selecionar(aindaExiste ? selecionado : MURAL, false);
+  },
+  erro(d) { adicionarSistema(d.mensagem); },
+  sistema(d) { adicionarSistema(d.mensagem); },
+  comando_ok(d) { adicionar(selecionado, { texto: d.mensagem, classe: "confirmacao" }); },
+  presenca(d) { usuarios.set(d.apelido, d.online); renderizarLista(); },
+  contatos(d) { contatos = new Set(d.contatos); renderizarLista(); },
+  papel(d) { meuPapel = d.papel; atualizarNomeTopo(); atualizarTitulo(); atualizarEntrada(); },
+  msg(d) {
+    const chave = d.sala ? chaveSala(d.sala) : d.privado ? chaveUsuario(d.de) : MURAL;
+    const minha = d.de === meuNome;
+    empurrar(chave, { remetente: d.de, texto: d.texto, hora: d.hora, classe: minha ? "enviada" : "recebida" });
+    if (selecionado === chave) {
+      renderizarConversa();
+      if (d.privado) enviarWs({ tipo: "marcar_lidas", interlocutor: d.de });
+    } else if (!minha && chave !== MURAL) {
+      naoLidas[chave] = (naoLidas[chave] || 0) + 1;
+      tocarSom();
+    }
+    renderizarLista();
+  },
+  msg_enviada(d) {
+    empurrar(chaveUsuario(d.para), { remetente: meuNome, texto: d.texto, hora: d.hora, classe: "enviada" });
+    if (selecionado === chaveUsuario(d.para)) renderizarConversa();
+  },
+  renomeado(d) { renomear(d.de, d.para); },
+  apagado(d) { aplicarApagado(d); },
+  bloqueado(d) { definirBloqueio(d.ate); adicionarSistema(d.mensagem + (bloqueadoAte ? " Liberado em " + formatarHora(d.ate) + "." : "")); },
+  desbloqueado(d) { definirBloqueio(null); adicionarSistema(d.mensagem); },
+  sala_atualizada(d) {
+    const atual = salas.get(d.nome);
+    salas.set(d.nome, { nome: d.nome, dono: d.dono, membros: d.membros, membro: atual ? atual.membro : d.dono === meuNome });
+    if (salaModal === d.nome) preencherModalSala();
+    renderizarLista();
+    if (selecionado === chaveSala(d.nome)) atualizarTitulo();
+  },
+  sala_entrou(d) {
+    const s = salas.get(d.nome) || { nome: d.nome, dono: meuNome, membros: 1 };
+    s.membro = true;
+    salas.set(d.nome, s);
+    conversas[chaveSala(d.nome)] = paraMsgs(d.historico);
+    if (salaModal === d.nome || d.criada) {
+      fecharModais();
+      selecionar(chaveSala(d.nome));
+    } else {
+      renderizarLista();
+    }
+  },
+  sala_saiu(d) { sairDaSala(d.nome, d.mensagem); },
+  sala_apagada(d) {
+    const eraMembro = salas.get(d.nome)?.membro;
+    salas.delete(d.nome);
+    sairDaSala(d.nome, eraMembro ? "A sala " + d.nome + " foi apagada." : null);
+    if (salaModal === d.nome) fecharModais();
+  },
+  aviso_sala(d) { adicionar(chaveSala(d.sala), { texto: d.mensagem, classe: "sistema" }); },
+  erro_sala(d) {
+    const alvo = !el("modal-criar").classList.contains("escondido") ? "criar-erro" : !el("modal-sala").classList.contains("escondido") ? "sala-erro" : null;
+    if (alvo) el(alvo).textContent = d.mensagem; else adicionarSistema(d.mensagem);
+  },
+  solicitacao_enviada(d) {
+    el("sala-erro").textContent = "";
+    el("sala-info").textContent = "📩 Pedido enviado para " + d.dono + ". Você entra assim que for aceito.";
+  },
+};
+
+function sairDaSala(nome, mensagem) {
+  const s = salas.get(nome);
+  if (s) s.membro = false;
+  delete conversas[chaveSala(nome)];
+  delete naoLidas[chaveSala(nome)];
+  if (selecionado === chaveSala(nome)) selecionar(MURAL, false);
+  if (mensagem) adicionarSistema(mensagem);
+  renderizarLista();
+}
+
+function definirBloqueio(ate) {
+  clearTimeout(timerDesbloqueio);
+  bloqueadoAte = ate ? new Date(ate) : null;
+  if (bloqueadoAte && bloqueadoAte > new Date()) {
+    const ms = bloqueadoAte - new Date();
+    if (ms < 2 ** 31) timerDesbloqueio = setTimeout(() => { definirBloqueio(null); adicionarSistema("✅ Envio liberado."); }, ms + 500);
+  } else {
+    bloqueadoAte = null;
+  }
+  atualizarEntrada();
+}
+
+// ---------------------------------------------------------------
+// Login / logout
+// ---------------------------------------------------------------
 el("modal-form").onsubmit = async (e) => {
   e.preventDefault();
   const apelido = el("modal-input").value.trim();
@@ -249,16 +422,82 @@ el("sair").onclick = async () => {
   ws = null;
   if (antigo) antigo.close();
   try { await fetch("/api/sair", {method: "POST"}); } catch (e) {}
-  meuNome = "";
-  conversas = { "GERAL": [] };
-  naoLidas = {};
-  ultimosUsuarios = [];
-  selecionado = "GERAL";
-  renderizarUsuarios();
+  meuNome = ""; meuPapel = 0;
+  conversas = {}; naoLidas = {}; usuarios = new Map(); contatos = new Set(); salas = new Map();
+  selecionado = MURAL;
+  definirBloqueio(null);
+  renderizarLista();
   renderizarConversa();
   mostrarLogin();
 };
 
+// ---------------------------------------------------------------
+// Salas: criar, entrar, solicitar
+// ---------------------------------------------------------------
+function fecharModais() {
+  el("modal-criar").classList.add("escondido");
+  el("modal-sala").classList.add("escondido");
+  salaModal = null;
+}
+document.querySelectorAll("[data-fechar]").forEach(b => b.onclick = fecharModais);
+document.querySelectorAll(".modal").forEach(m => m.addEventListener("click", (e) => {
+  if (e.target === m && m.id !== "modal-nome") fecharModais();
+}));
+
+function abrirCriarSala() {
+  el("criar-erro").textContent = "";
+  el("criar-nome").value = ""; el("criar-senha").value = "";
+  el("modal-criar").classList.remove("escondido");
+  el("criar-nome").focus();
+}
+el("criar-form").onsubmit = (e) => {
+  e.preventDefault();
+  const nome = el("criar-nome").value.trim();
+  const senha = el("criar-senha").value;
+  if (!nome || !senha) { el("criar-erro").textContent = "Preencha nome e senha."; return; }
+  el("criar-erro").textContent = "";
+  enviarWs({ tipo: "criar_sala", nome, senha });
+};
+
+function preencherModalSala() {
+  const s = salas.get(salaModal);
+  if (!s) return;
+  el("sala-titulo").textContent = "🔒 " + s.nome;
+  el("sala-dica").textContent = "Criada por " + s.dono + " · " + s.membros + (s.membros === 1 ? " membro" : " membros");
+}
+function abrirSala(nome) {
+  salaModal = nome;
+  preencherModalSala();
+  el("sala-erro").textContent = ""; el("sala-info").textContent = ""; el("sala-senha").value = "";
+  el("modal-sala").classList.remove("escondido");
+}
+el("sala-form").onsubmit = (e) => {
+  e.preventDefault();
+  const senha = el("sala-senha").value;
+  if (!senha) { el("sala-erro").textContent = "Digite a senha."; return; }
+  el("sala-erro").textContent = "";
+  enviarWs({ tipo: "entrar_sala", sala: salaModal, senha });
+};
+el("sala-solicitar").onclick = () => {
+  el("sala-erro").textContent = "";
+  enviarWs({ tipo: "solicitar_sala", sala: salaModal });
+};
+
+el("titulo-acao").onclick = () => {
+  if (!ehSala(selecionado)) return;
+  const nome = nomeDaChave(selecionado);
+  const s = salas.get(nome);
+  if (!s) return;
+  if (s.dono === meuNome) {
+    if (confirm("Apagar a sala " + nome + " e todas as mensagens dela?")) enviarWs({ texto: "/apagarsala " + nome, para: null, sala: null });
+  } else if (confirm("Sair da sala " + nome + "?")) {
+    enviarWs({ texto: "/sairsala " + nome, para: null, sala: null });
+  }
+};
+
+// ---------------------------------------------------------------
+// Utilidades de conversa
+// ---------------------------------------------------------------
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 function tocarSom() {
@@ -272,147 +511,272 @@ function tocarSom() {
   } catch (e) {}
 }
 
-function adicionarSistema(texto) {
-  if (!conversas[selecionado]) conversas[selecionado] = [];
-  conversas[selecionado].push({ remetente: "", texto: texto, hora: "", classe: "sistema" });
-  renderizarConversa();
+function adicionar(chave, m) {
+  empurrar(chave, { remetente: "", hora: "", ...m });
+  if (chave === selecionado) renderizarConversa();
 }
-
-function adicionarConfirmacao(texto) {
-  if (!conversas[selecionado]) conversas[selecionado] = [];
-  conversas[selecionado].push({ remetente: "", texto: texto, hora: "", classe: "confirmacao" });
-  renderizarConversa();
-}
+function adicionarSistema(texto) { adicionar(selecionado, { texto, classe: "sistema" }); }
 
 function renomear(de, para) {
-  if (meuNome === de) {
-    meuNome = para;
-    definirStatus("online", "Você é: " + meuNome);
-  }
-  if (conversas[de]) {
-    conversas[para] = (conversas[para] || []).concat(conversas[de]);
-    delete conversas[de];
-  }
-  if (naoLidas[de]) { naoLidas[para] = naoLidas[de]; delete naoLidas[de]; }
-  for (const msgs of Object.values(conversas)) {
-    msgs.forEach(m => { if (m.remetente === de) m.remetente = para; });
-  }
-  if (selecionado === de) selecionar(para); else renderizarConversa();
+  if (meuNome === de) { meuNome = para; atualizarNomeTopo(); }
+  if (usuarios.has(de)) { usuarios.set(para, usuarios.get(de)); usuarios.delete(de); }
+  if (contatos.has(de)) { contatos.delete(de); contatos.add(para); }
+  const kDe = chaveUsuario(de), kPara = chaveUsuario(para);
+  if (conversas[kDe]) { conversas[kPara] = (conversas[kPara] || []).concat(conversas[kDe]); delete conversas[kDe]; }
+  if (naoLidas[kDe]) { naoLidas[kPara] = naoLidas[kDe]; delete naoLidas[kDe]; }
+  for (const msgs of Object.values(conversas)) msgs.forEach(m => { if (m.remetente === de) m.remetente = para; });
+  for (const s of salas.values()) if (s.dono === de) s.dono = para;
+  if (selecionado === kDe) selecionar(kPara, false); else { renderizarLista(); renderizarConversa(); atualizarTitulo(); }
 }
 
-function aplicarApagado(dados) {
-  if (dados.escopo === "geral") {
-    conversas["GERAL"] = [];
-  } else if (dados.escopo === "privada") {
-    conversas[dados.com] = [];
-    delete naoLidas[dados.com];
-  } else if (dados.escopo === "total") {
-    for (const k of Object.keys(conversas)) conversas[k] = [];
-    naoLidas = {};
-  } else if (dados.escopo === "usuario") {
-    for (const k of Object.keys(conversas)) {
-      conversas[k] = conversas[k].filter(m => m.remetente !== dados.usuario);
-    }
-    delete naoLidas[dados.usuario];
+function aplicarApagado(d) {
+  if (d.escopo === "mural") conversas[MURAL] = [];
+  else if (d.escopo === "privada") { conversas[chaveUsuario(d.com)] = []; delete naoLidas[chaveUsuario(d.com)]; }
+  else if (d.escopo === "sala") { conversas[chaveSala(d.sala)] = []; delete naoLidas[chaveSala(d.sala)]; }
+  else if (d.escopo === "total") { for (const k of Object.keys(conversas)) conversas[k] = []; naoLidas = {}; }
+  else if (d.escopo === "usuario") {
+    for (const k of Object.keys(conversas)) conversas[k] = conversas[k].filter(m => m.remetente !== d.usuario);
   }
-  renderizarUsuarios();
+  renderizarLista();
   renderizarConversa();
 }
 
-function renderizarUsuarios(usuarios) {
-  if (usuarios) ultimosUsuarios = usuarios;
-  const lista = el("lista");
-  lista.innerHTML = "";
-  const divGeral = document.createElement("div");
-  divGeral.className = "usuario geral" + (selecionado === "GERAL" ? " selecionado" : "");
-  divGeral.innerHTML = '<span>📢</span><span>Geral</span>';
-  divGeral.onclick = () => selecionar("GERAL");
-  lista.appendChild(divGeral);
-  const ordenados = [...ultimosUsuarios].sort((a, b) => {
-    if (a.online !== b.online) return a.online ? -1 : 1;
-    return a.apelido.localeCompare(b.apelido);
+// Mensagens privadas e de salas expiram: some da tela quando passam do prazo.
+setInterval(() => {
+  const limite = Date.now() - ttlHoras * 3600 * 1000;
+  let mudou = false;
+  for (const k of Object.keys(conversas)) {
+    if (k === MURAL) continue;
+    const antes = conversas[k].length;
+    conversas[k] = conversas[k].filter(m => !m.hora || new Date(m.hora).getTime() > limite);
+    if (conversas[k].length !== antes && k === selecionado) mudou = true;
+  }
+  if (mudou) renderizarConversa();
+}, 60000);
+
+// ---------------------------------------------------------------
+// Barra lateral
+// ---------------------------------------------------------------
+function criarItem(classes, onclick) {
+  const div = document.createElement("div");
+  div.className = "item " + classes;
+  div.onclick = onclick;
+  return div;
+}
+function span(texto, classe) {
+  const s = document.createElement("span");
+  if (classe) s.className = classe;
+  s.textContent = texto;
+  return s;
+}
+function badge(div, chave) {
+  if (naoLidas[chave]) div.appendChild(span(String(naoLidas[chave]), "badge-nao-lidas"));
+}
+function secao(titulo, botao) {
+  const div = document.createElement("div");
+  div.className = "secao";
+  div.appendChild(span(titulo));
+  if (botao) div.appendChild(botao);
+  return div;
+}
+
+function itemUsuario(apelido) {
+  const chave = chaveUsuario(apelido);
+  const div = criarItem(selecionado === chave ? "selecionado" : "", () => selecionar(chave));
+  div.appendChild(span("", "bolinha " + (usuarios.get(apelido) ? "online" : "offline")));
+  div.appendChild(span(apelido, "nome-item"));
+  badge(div, chave);
+  const pino = document.createElement("button");
+  const fixo = contatos.has(apelido);
+  pino.className = "pino" + (fixo ? " fixo" : "");
+  pino.title = fixo ? "Tirar dos contatos" : "Fixar nos contatos";
+  pino.textContent = "📌";
+  pino.onclick = (e) => { e.stopPropagation(); enviarWs({ tipo: "fixar", apelido, fixo: !fixo }); };
+  div.appendChild(pino);
+  return div;
+}
+
+function ordenarPessoas(lista) {
+  return lista.sort((a, b) => {
+    const oa = usuarios.get(a), ob = usuarios.get(b);
+    if (oa !== ob) return oa ? -1 : 1;
+    return a.localeCompare(b);
   });
-  ordenados.filter(u => u.apelido !== meuNome).forEach(u => {
-    const div = document.createElement("div");
-    div.className = "usuario" + (u.apelido === selecionado ? " selecionado" : "");
-    const bolinha = document.createElement("span");
-    bolinha.className = "bolinha " + (u.online ? "online" : "offline");
-    const nomeSpan = document.createElement("span");
-    nomeSpan.textContent = u.apelido;
-    div.appendChild(bolinha); div.appendChild(nomeSpan);
-    if (naoLidas[u.apelido]) {
-      const badge = document.createElement("span");
-      badge.className = "badge-nao-lidas";
-      badge.textContent = naoLidas[u.apelido];
-      div.appendChild(badge);
-    }
-    div.onclick = () => selecionar(u.apelido);
+}
+
+function renderizarLista() {
+  const lista = el("lista");
+  const busca = el("busca").value.trim().toLowerCase();
+  const casa = (nome) => !busca || nome.toLowerCase().includes(busca);
+  lista.innerHTML = "";
+
+  const mural = criarItem("mural" + (selecionado === MURAL ? " selecionado" : ""), () => selecionar(MURAL));
+  mural.appendChild(span("📢"));
+  mural.appendChild(span("Mural de Recados", "nome-item"));
+  lista.appendChild(mural);
+
+  // Salas
+  const btnCriar = document.createElement("button");
+  btnCriar.textContent = "+ Criar";
+  btnCriar.onclick = abrirCriarSala;
+  lista.appendChild(secao("Salas", btnCriar));
+  const listaSalas = [...salas.values()].filter(s => casa(s.nome))
+    .sort((a, b) => (a.membro !== b.membro ? (a.membro ? -1 : 1) : a.nome.localeCompare(b.nome)));
+  if (!listaSalas.length) lista.appendChild(Object.assign(document.createElement("div"), { className: "dica-vazia", textContent: busca ? "Nenhuma sala encontrada." : "Nenhuma sala ainda." }));
+  listaSalas.forEach(s => {
+    const chave = chaveSala(s.nome);
+    const div = criarItem((s.membro ? "" : "fora ") + (selecionado === chave ? "selecionado" : ""),
+      () => s.membro ? selecionar(chave) : abrirSala(s.nome));
+    div.appendChild(span(s.membro ? "💬" : "🔒"));
+    div.appendChild(span(s.nome, "nome-item"));
+    badge(div, chave);
+    div.appendChild(span(String(s.membros), "sub"));
     lista.appendChild(div);
   });
+
+  // Contatos (fixados)
+  const outros = [...usuarios.keys()].filter(a => a !== meuNome && casa(a));
+  const fixados = ordenarPessoas(outros.filter(a => contatos.has(a)));
+  lista.appendChild(secao("Contatos"));
+  if (!fixados.length) lista.appendChild(Object.assign(document.createElement("div"), { className: "dica-vazia", textContent: busca ? "Nenhum contato encontrado." : "Toque em 📌 para fixar alguém aqui." }));
+  fixados.forEach(a => lista.appendChild(itemUsuario(a)));
+
+  // Todos
+  const todos = ordenarPessoas(outros.filter(a => !contatos.has(a)));
+  lista.appendChild(secao("Todos (" + todos.length + ")"));
+  todos.slice(0, LIMITE_LISTA).forEach(a => lista.appendChild(itemUsuario(a)));
+  if (todos.length > LIMITE_LISTA) {
+    lista.appendChild(Object.assign(document.createElement("div"), { className: "mais", textContent: "… e mais " + (todos.length - LIMITE_LISTA) + ". Use a busca." }));
+  }
+
+  const totalNaoLidas = Object.values(naoLidas).reduce((a, b) => a + b, 0);
+  el("menu-ponto").classList.toggle("escondido", !totalNaoLidas);
 }
 
-function selecionar(nome) {
-  selecionado = nome;
-  delete naoLidas[nome];
-  el("chat-titulo").textContent = nome === "GERAL" ? "📢 Geral" : "👤 " + nome;
-  el("texto").placeholder = nome === "GERAL" ? "Mensagem para todos..." : "Mensagem para " + nome + "...";
-  const conectado = ws && ws.readyState === WebSocket.OPEN;
-  habilitarEnvio(conectado);
-  if (nome !== "GERAL" && conectado) {
-    ws.send(JSON.stringify({tipo: "marcar_lidas", interlocutor: nome}));
-  }
-  renderizarUsuarios();
+el("busca").addEventListener("input", renderizarLista);
+
+function abrirMenu(abrir) {
+  el("sidebar").classList.toggle("aberto", abrir);
+  el("veu").classList.toggle("aberto", abrir);
+}
+el("menu").onclick = () => abrirMenu(!el("sidebar").classList.contains("aberto"));
+el("veu").onclick = () => abrirMenu(false);
+
+// ---------------------------------------------------------------
+// Conversa aberta
+// ---------------------------------------------------------------
+function selecionar(chave, fecharMenu = true) {
+  selecionado = chave;
+  delete naoLidas[chave];
+  if (ehPrivada(chave)) enviarWs({ tipo: "marcar_lidas", interlocutor: nomeDaChave(chave) });
+  atualizarTitulo();
+  atualizarEntrada();
+  renderizarLista();
   renderizarConversa();
-  if (conectado) el("texto").focus();
+  if (fecharMenu) abrirMenu(false);
+  if (!el("texto").disabled && window.innerWidth > 700) el("texto").focus();
+}
+
+function atualizarTitulo() {
+  const acao = el("titulo-acao");
+  acao.classList.add("escondido");
+  let nome, sub;
+  if (selecionado === MURAL) {
+    nome = "📢 Mural de Recados";
+    sub = meuPapel >= ADMIN ? "Recados para todos. Só Admins escrevem aqui." : "Recados dos Admins. Só Admins escrevem aqui.";
+  } else if (ehSala(selecionado)) {
+    const s = salas.get(nomeDaChave(selecionado));
+    nome = "💬 " + nomeDaChave(selecionado);
+    sub = (s ? "Dono: " + s.dono + " · " + s.membros + (s.membros === 1 ? " membro" : " membros") + " · " : "") + "⏳ mensagens somem em " + ttlHoras + "h";
+    if (s) {
+      acao.textContent = s.dono === meuNome ? "Apagar sala" : "Sair da sala";
+      acao.classList.remove("escondido");
+    }
+  } else {
+    nome = "👤 " + nomeDaChave(selecionado);
+    sub = "⏳ Mensagens privadas somem após " + ttlHoras + " horas";
+  }
+  el("titulo-nome").textContent = nome;
+  el("titulo-sub").textContent = sub;
+}
+
+function atualizarEntrada() {
+  const input = el("texto");
+  let ativo = conectado();
+  let dica = "Mensagem...";
+  if (selecionado === MURAL) {
+    dica = meuPapel >= ADMIN ? "Recado para todos..." : "📢 Só Admins escrevem aqui (comandos / funcionam)";
+  } else if (ehSala(selecionado)) {
+    dica = "Mensagem para a sala " + nomeDaChave(selecionado) + "...";
+  } else {
+    dica = "Mensagem para " + nomeDaChave(selecionado) + "...";
+  }
+  if (ativo && bloqueadoAte) dica = "🚫 Envio travado até " + formatarHora(bloqueadoAte) + " (comandos funcionam)";
+  input.disabled = !ativo;
+  el("enviar").disabled = !ativo;
+  input.placeholder = dica;
 }
 
 function formatarHora(hora) {
   const d = new Date(hora);
   if (isNaN(d)) return "";
-  const hoje = new Date();
   const hm = d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
-  return d.toDateString() === hoje.toDateString() ? hm : d.toLocaleDateString([], {day: "2-digit", month: "2-digit"}) + " " + hm;
+  return d.toDateString() === new Date().toDateString() ? hm
+    : d.toLocaleDateString([], {day: "2-digit", month: "2-digit"}) + " " + hm;
 }
 
 function renderizarConversa() {
   const container = el("mensagens");
   container.innerHTML = "";
   const msgs = conversas[selecionado] || [];
-  msgs.forEach(m => adicionarMensagemAoContainer(container, m.remetente, m.texto, m.classe, m.hora));
+  if (!msgs.length && meuNome) {
+    const vazio = document.createElement("div");
+    vazio.className = "vazio";
+    vazio.textContent = selecionado === MURAL ? "Nenhum recado ainda."
+      : "Nenhuma mensagem. As mensagens aqui somem após " + ttlHoras + " horas.";
+    container.appendChild(vazio);
+  }
+  msgs.forEach(m => {
+    const div = document.createElement("div");
+    div.className = "msg " + m.classe;
+    if (m.remetente && m.classe === "recebida" && selecionado !== chaveUsuario(m.remetente)) {
+      const n = document.createElement("div");
+      n.className = "nome"; n.textContent = m.remetente;
+      div.appendChild(n);
+    }
+    const c = document.createElement("div"); c.textContent = m.texto;
+    div.appendChild(c);
+    if (m.hora) {
+      const h = document.createElement("div");
+      h.className = "hora"; h.textContent = formatarHora(m.hora);
+      div.appendChild(h);
+    }
+    container.appendChild(div);
+  });
   container.scrollTop = container.scrollHeight;
-}
-
-function adicionarMensagemAoContainer(container, remetente, texto, classe, hora) {
-  const div = document.createElement("div");
-  div.className = "msg " + classe;
-  if (remetente) {
-    const n = document.createElement("div");
-    n.className = "nome"; n.textContent = remetente;
-    div.appendChild(n);
-  }
-  const c = document.createElement("div"); c.textContent = texto;
-  div.appendChild(c);
-  if (hora) {
-    const h = document.createElement("div");
-    h.className = "hora"; h.textContent = formatarHora(hora);
-    div.appendChild(h);
-  }
-  container.appendChild(div);
 }
 
 function enviarMensagem() {
   const input = el("texto");
-  if (input.value.trim() && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({para: selecionado === "GERAL" ? null : selecionado, texto: input.value}));
+  const texto = input.value;
+  if (!texto.trim() || !conectado()) return;
+  if (selecionado === MURAL && meuPapel < ADMIN && !texto.trim().startsWith("/")) {
+    adicionarSistema("📢 Somente Admins podem escrever no Mural de Recados. Converse no privado ou numa sala.");
     input.value = "";
-    input.focus();
+    return;
   }
+  const dados = { texto, para: null, sala: null };
+  if (ehSala(selecionado)) dados.sala = nomeDaChave(selecionado);
+  else if (ehPrivada(selecionado)) dados.para = nomeDaChave(selecionado);
+  enviarWs(dados);
+  input.value = "";
+  input.focus();
 }
 
 el("enviar").onclick = enviarMensagem;
 el("texto").addEventListener("keydown", (e) => { if (e.key === "Enter") enviarMensagem(); });
 
-renderizarUsuarios();
+renderizarLista();
 conectar();
 </script>
 </body>

@@ -25,13 +25,26 @@ SENHA_ADMIN = os.environ.get("ADMIN_PASSWORD", "")
 PORTA = int(os.environ.get("PORT", "8080"))
 TEMPO_MINIMO_RESET = timedelta(minutes=int(os.environ.get("ADMIN_RESET_MINUTES", "60")))
 SESSAO_DIAS = int(os.environ.get("SESSION_DAYS", "30"))
+TTL_HORAS = int(os.environ.get("PRIVATE_TTL_HOURS", "24"))
+FUSO = os.environ.get("TIMEZONE", "America/Sao_Paulo")
 NOME_COOKIE = "chat_sessao"
 
 MAX_APELIDO = 20
 MIN_SENHA = 6
+MIN_SENHA_SALA = 4
 MAX_SENHA = 128
 MAX_TEXTO = 2000
+MAX_SALAS_POR_USUARIO = 5
 APELIDO_VALIDO = re.compile(r"^[\w.-]{2,%d}$" % MAX_APELIDO)
+
+# Anti-flood: mais de FLOOD_MAX_MSGS mensagens em FLOOD_JANELA segundos = 1 aviso.
+# Cada aviso trava o envio por FLOOD_TRAVA_MIN minuto(s); passou de FLOOD_AVISOS
+# avisos no dia, trava por FLOOD_TRAVA_FINAL_H horas.
+FLOOD_MAX_MSGS = 8
+FLOOD_JANELA = 10
+FLOOD_AVISOS = 3
+FLOOD_TRAVA_MIN = 1
+FLOOD_TRAVA_FINAL_H = 24
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -41,7 +54,30 @@ log = logging.getLogger("chat")
 
 PAGINA = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
-HELP_ADMIN = """📖 Comandos de Admin:
+HELP_USUARIO = """📖 Comandos:
+
+/aceitar Sala Nome
+  Coloca Nome na sua sala (só o dono). Numa conversa
+  privada, basta /aceitar Sala.
+
+/remover Sala Nome
+  Tira Nome da sua sala (só o dono).
+
+/sairsala Sala
+  Sai de uma sala em que você está.
+
+/apagarsala Sala
+  Apaga sua sala e todas as mensagens dela.
+
+/apagar
+  Dentro da sua sala: apaga as mensagens dela.
+
+/help
+  Mostra esta lista de comandos."""
+
+HELP_ADMIN = HELP_USUARIO + """
+
+🛡️ Comandos de Admin:
 
 /admin lista
   Mostra o Master e os Admins.
@@ -52,16 +88,19 @@ HELP_ADMIN = """📖 Comandos de Admin:
 /senha Usuario NovaSenha
   Define uma nova senha para Usuario e desconecta as sessões dele.
 
+/liberar Usuario
+  Destrava o envio de quem foi bloqueado por flood.
+
 /apagar
-  Apaga o histórico da conversa aberta (Geral ou privada).
+  Apaga o histórico da conversa aberta (Mural, privada ou sala).
 
 /apagar Usuario
   Apaga todas as mensagens que Usuario mandou (em todo lugar).
 
-/help
-  Mostra esta lista de comandos.
+/apagarsala Sala
+  Apaga qualquer sala.
 
-Admins não podem usar /nome, /senha ou /apagar Usuario
+Admins não podem usar /nome, /senha, /liberar ou /apagar Usuario
 contra o Master ou outros Admins."""
 
 HELP_MASTER = HELP_ADMIN + """
@@ -137,15 +176,22 @@ class LimiteTaxa:
         fila.append(agora)
         return True
 
+    def zerar(self, chave):
+        self.eventos.pop(chave, None)
+
     def limpar(self):
         agora = time.monotonic()
         for chave in [k for k, f in self.eventos.items() if not f or agora - f[-1] > self.janela]:
             del self.eventos[chave]
 
 
-limite_login = LimiteTaxa(10, 300)           # por IP
-limite_mensagens = LimiteTaxa(20, 10)        # por usuário
-limite_senha_admin = LimiteTaxa(5, 900)      # tentativas de senha de admin por usuário
+limite_login = LimiteTaxa(10, 300)                       # por IP
+limite_acoes = LimiteTaxa(20, 10)                        # qualquer ação no WebSocket, por usuário
+limite_senha_admin = LimiteTaxa(5, 900)                  # tentativas de senha de admin por usuário
+limite_senha_sala = LimiteTaxa(5, 900)                   # tentativas de senha de sala por usuário
+limite_solicitacao = LimiteTaxa(1, 600)                  # 1 pedido por sala a cada 10 min
+detector_flood = LimiteTaxa(FLOOD_MAX_MSGS, FLOOD_JANELA)  # mensagens por usuário
+LIMITES = (limite_login, limite_acoes, limite_senha_admin, limite_senha_sala, limite_solicitacao, detector_flood)
 
 
 def ip_cliente(request):
@@ -171,20 +217,30 @@ def validar_apelido(apelido):
     return None
 
 
-def validar_senha(senha):
-    if not isinstance(senha, str) or not (MIN_SENHA <= len(senha) <= MAX_SENHA):
-        return f"Senha deve ter de {MIN_SENHA} a {MAX_SENHA} caracteres."
+def validar_nome_sala(nome):
+    if not isinstance(nome, str) or not APELIDO_VALIDO.match(nome):
+        return f"Nome da sala deve ter de 2 a {MAX_APELIDO} caracteres (letras, números, ponto, hífen ou _), sem espaços."
+    return None
+
+
+def validar_senha(senha, minimo=MIN_SENHA):
+    if not isinstance(senha, str) or not (minimo <= len(senha) <= MAX_SENHA):
+        return f"Senha deve ter de {minimo} a {MAX_SENHA} caracteres."
     return None
 
 
 def iso(dt):
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+    return dt.astimezone(timezone.utc).isoformat(timespec="seconds") if dt else None
+
+
+def formatar_msg(m):
+    return {"remetente": m["remetente"], "texto": m["texto"], "hora": iso(m["enviado_em"])}
 
 
 # ---------------------------------------------------------------
 # Conexões em memória
 # ---------------------------------------------------------------
-# usuario_id -> {"apelido": str, "sockets": set[WebSocketResponse]}
+# usuario_id -> {"apelido": str, "sockets": set[WebSocketResponse], "bloqueado_ate": datetime | None}
 conexoes = {}
 
 
@@ -202,17 +258,15 @@ async def enviar_para_usuario(usuario_id, dados):
         await asyncio.gather(*[ws.send_str(msg) for ws in list(info["sockets"])], return_exceptions=True)
 
 
-async def transmitir(dados):
+async def enviar_para_usuarios(usuario_ids, dados):
     msg = json.dumps(dados)
-    sockets = [ws for info in conexoes.values() for ws in info["sockets"]]
+    sockets = [ws for uid in usuario_ids if uid in conexoes for ws in conexoes[uid]["sockets"]]
     if sockets:
         await asyncio.gather(*[ws.send_str(msg) for ws in sockets], return_exceptions=True)
 
 
-async def enviar_lista_usuarios():
-    usuarios = await db.listar_usuarios()
-    lista = [{"apelido": u["apelido"], "online": u["id"] in conexoes} for u in usuarios]
-    await transmitir({"tipo": "usuarios", "usuarios": lista})
+async def transmitir(dados):
+    await enviar_para_usuarios(list(conexoes), dados)
 
 
 async def desconectar_usuario(usuario_id):
@@ -220,6 +274,32 @@ async def desconectar_usuario(usuario_id):
     if info:
         for ws in list(info["sockets"]):
             await ws.close(code=4001, message=b"sessao encerrada")
+
+
+async def avisar_sala(sala_id, nome_sala, mensagem):
+    """Mensagem de sistema dentro da conversa da sala, para os membros online."""
+    await enviar_para_usuarios(await db.membros_da_sala(sala_id), {"tipo": "aviso_sala", "sala": nome_sala, "mensagem": mensagem})
+
+
+async def anunciar_sala(nome_sala):
+    """Atualiza a sala (dono e nº de membros) na lista de todos."""
+    for s in await db.listar_salas(0):
+        if s["nome"].lower() == nome_sala.lower():
+            await transmitir({"tipo": "sala_atualizada", "nome": s["nome"], "dono": s["dono"], "membros": s["membros"]})
+            return
+
+
+async def colocar_na_sala(sala, usuario_id, apelido):
+    """Adiciona o membro e manda para ele o histórico da sala. Retorna False se já era membro."""
+    if not await db.adicionar_membro(sala["id"], usuario_id):
+        return False
+    historico = await db.historico_sala(sala["id"], TTL_HORAS)
+    await enviar_para_usuario(usuario_id, {
+        "tipo": "sala_entrou", "nome": sala["nome"], "historico": [formatar_msg(m) for m in historico],
+    })
+    await avisar_sala(sala["id"], sala["nome"], f"{apelido} entrou na sala.")
+    await anunciar_sala(sala["nome"])
+    return True
 
 
 # ---------------------------------------------------------------
@@ -323,28 +403,40 @@ async def websocket(request):
         return ws
 
     usuario_id = sessao["id"]
+    primeira_conexao = usuario_id not in conexoes
     info = conexoes.setdefault(usuario_id, {"apelido": sessao["apelido"], "sockets": set()})
     info["apelido"] = sessao["apelido"]
     info["sockets"].add(ws)
     try:
         await db.atualizar_ultimo_acesso(usuario_id)
-        geral, privadas = await db.carregar_historico(usuario_id)
+        info["bloqueado_ate"] = await db.bloqueio_atual(usuario_id)
+        mural, privadas, msgs_salas = await db.carregar_historico(usuario_id, TTL_HORAS)
         historico_privadas = {}
         for m in privadas:
             interlocutor = m["destinatario"] if m["remetente"] == info["apelido"] else m["remetente"]
-            historico_privadas.setdefault(interlocutor, []).append(
-                {"remetente": m["remetente"], "texto": m["texto"], "hora": iso(m["enviado_em"])}
-            )
+            historico_privadas.setdefault(interlocutor, []).append(formatar_msg(m))
+        historico_salas = {}
+        for m in msgs_salas:
+            historico_salas.setdefault(m["sala"], []).append(formatar_msg(m))
+        usuarios = await db.listar_usuarios()
         await enviar(ws, {
             "tipo": "bemvindo",
             "nome": info["apelido"],
+            "papel": await db.papel(usuario_id),
+            "ttl_horas": TTL_HORAS,
+            "bloqueado_ate": iso(info["bloqueado_ate"]),
             "historico": {
-                "geral": [{"remetente": m["remetente"], "texto": m["texto"], "hora": iso(m["enviado_em"])} for m in geral],
+                "mural": [formatar_msg(m) for m in mural],
                 "privadas": historico_privadas,
+                "salas": historico_salas,
             },
-            "nao_lidas": await db.contar_nao_lidas(usuario_id),
+            "nao_lidas": await db.contar_nao_lidas(usuario_id, TTL_HORAS),
+            "usuarios": [{"apelido": u["apelido"], "online": u["id"] in conexoes} for u in usuarios],
+            "contatos": await db.listar_contatos(usuario_id),
+            "salas": [dict(s) for s in await db.listar_salas(usuario_id)],
         })
-        await enviar_lista_usuarios()
+        if primeira_conexao:
+            await transmitir({"tipo": "presenca", "apelido": info["apelido"], "online": True})
 
         async for msg in ws:
             if msg.type != WSMsgType.TEXT:
@@ -364,15 +456,41 @@ async def websocket(request):
             conexoes.pop(usuario_id, None)
             try:
                 await db.atualizar_ultimo_acesso(usuario_id)
-                await enviar_lista_usuarios()
+                await transmitir({"tipo": "presenca", "apelido": info["apelido"], "online": False})
             except Exception:
                 log.exception("erro ao finalizar conexão")
     return ws
 
 
+async def pode_enviar(ws, usuario_id):
+    """Aplica o bloqueio e o anti-flood. Retorna False (e avisa) se o envio está travado."""
+    info = conexoes[usuario_id]
+    agora = datetime.now(timezone.utc)
+    if info.get("bloqueado_ate") and info["bloqueado_ate"] > agora:
+        await enviar(ws, {"tipo": "bloqueado", "ate": iso(info["bloqueado_ate"]),
+                          "mensagem": "🚫 Seu envio está travado por flood."})
+        return False
+    if detector_flood.permitir(usuario_id):
+        return True
+
+    detector_flood.zerar(usuario_id)
+    avisos, ate = await db.registrar_flood(usuario_id, FUSO, FLOOD_AVISOS, FLOOD_TRAVA_MIN, FLOOD_TRAVA_FINAL_H)
+    info["bloqueado_ate"] = ate
+    if avisos <= FLOOD_AVISOS:
+        mensagem = f"⚠️ Aviso {avisos}/{FLOOD_AVISOS}: muitas mensagens seguidas. Envio travado por {FLOOD_TRAVA_MIN} minuto."
+    else:
+        mensagem = f"🚫 Você passou de {FLOOD_AVISOS} avisos hoje. Envio travado por {FLOOD_TRAVA_FINAL_H} horas."
+    log.info("flood: %s (aviso %d), travado até %s", info["apelido"], avisos, ate)
+    await enviar_para_usuario(usuario_id, {"tipo": "bloqueado", "ate": iso(ate), "mensagem": mensagem})
+    return False
+
+
 async def tratar_mensagem(ws, usuario_id, dados):
     info = conexoes[usuario_id]
     tipo = dados.get("tipo")
+    if not limite_acoes.permitir(usuario_id):
+        await enviar(ws, {"tipo": "erro", "mensagem": "Devagar! Você está fazendo coisas rápido demais."})
+        return
 
     if tipo == "marcar_lidas":
         interlocutor = dados.get("interlocutor")
@@ -382,44 +500,155 @@ async def tratar_mensagem(ws, usuario_id, dados):
                 await db.marcar_como_lidas(usuario_id, alvo["id"])
         return
 
+    if tipo == "fixar":
+        apelido, fixo = dados.get("apelido"), dados.get("fixo")
+        if isinstance(apelido, str) and isinstance(fixo, bool):
+            alvo = await db.buscar_usuario_por_apelido(apelido)
+            if alvo and alvo["id"] != usuario_id:
+                await db.fixar_contato(usuario_id, alvo["id"], fixo)
+                await enviar_para_usuario(usuario_id, {"tipo": "contatos", "contatos": await db.listar_contatos(usuario_id)})
+        return
+
+    if tipo == "criar_sala":
+        await criar_sala(ws, usuario_id, dados.get("nome"), dados.get("senha"))
+        return
+
+    if tipo == "entrar_sala":
+        await entrar_sala_com_senha(ws, usuario_id, dados.get("sala"), dados.get("senha"))
+        return
+
+    if tipo == "solicitar_sala":
+        await solicitar_sala(ws, usuario_id, dados.get("sala"))
+        return
+
     texto = dados.get("texto")
     destino = dados.get("para")
-    if not isinstance(texto, str) or (destino is not None and not isinstance(destino, str)):
+    nome_sala = dados.get("sala")
+    if not isinstance(texto, str) or (destino is not None and not isinstance(destino, str)) \
+            or (nome_sala is not None and not isinstance(nome_sala, str)):
         return
     texto = texto.strip()
     if not texto:
-        return
-    if not limite_mensagens.permitir(usuario_id):
-        await enviar(ws, {"tipo": "erro", "mensagem": "Devagar! Você está enviando mensagens rápido demais."})
         return
     if len(texto) > MAX_TEXTO:
         await enviar(ws, {"tipo": "erro", "mensagem": f"Mensagem muito longa (máximo {MAX_TEXTO} caracteres)."})
         return
 
     if texto.startswith("/"):
-        await tratar_comando(ws, usuario_id, texto, destino)
+        await tratar_comando(ws, usuario_id, texto, destino, nome_sala)
         return
 
-    await db.atualizar_ultimo_acesso(usuario_id)
     apelido = info["apelido"]
+
+    # Sala
+    if nome_sala is not None:
+        sala = await db.buscar_sala(nome_sala)
+        if not sala or not await db.eh_membro(sala["id"], usuario_id):
+            await enviar(ws, {"tipo": "erro", "mensagem": "Você não está nessa sala."})
+            return
+        if not await pode_enviar(ws, usuario_id):
+            return
+        await db.atualizar_ultimo_acesso(usuario_id)
+        hora = iso(await db.salvar_mensagem(usuario_id, None, texto, sala["id"]))
+        await enviar_para_usuarios(await db.membros_da_sala(sala["id"]), {
+            "tipo": "msg", "sala": sala["nome"], "de": apelido, "texto": texto, "hora": hora,
+        })
+        return
+
+    # Mural de Recados: só admins escrevem
     if destino is None:
+        if await db.papel(usuario_id) < db.ADMIN:
+            await enviar(ws, {"tipo": "erro", "mensagem": "📢 Somente Admins podem escrever no Mural de Recados."})
+            return
+        if not await pode_enviar(ws, usuario_id):
+            return
+        await db.atualizar_ultimo_acesso(usuario_id)
         hora = await db.salvar_mensagem(usuario_id, None, texto)
         await transmitir({"tipo": "msg", "de": apelido, "texto": texto, "privado": False, "hora": iso(hora)})
         return
 
+    # Privada
     alvo = await db.buscar_usuario_por_apelido(destino)
     if not alvo or alvo["id"] == usuario_id:
         await enviar(ws, {"tipo": "erro", "mensagem": "Usuário não encontrado."})
         return
+    if not await pode_enviar(ws, usuario_id):
+        return
+    await db.atualizar_ultimo_acesso(usuario_id)
+    await entregar_privada(usuario_id, alvo, texto)
+
+
+async def entregar_privada(usuario_id, alvo, texto):
+    apelido = conexoes[usuario_id]["apelido"]
     hora = iso(await db.salvar_mensagem(usuario_id, alvo["id"], texto))
     await enviar_para_usuario(alvo["id"], {"tipo": "msg", "de": apelido, "texto": texto, "privado": True, "hora": hora})
     await enviar_para_usuario(usuario_id, {"tipo": "msg_enviada", "para": alvo["apelido"], "texto": texto, "privado": True, "hora": hora})
 
 
 # ---------------------------------------------------------------
+# Salas
+# ---------------------------------------------------------------
+async def criar_sala(ws, usuario_id, nome, senha):
+    erro = validar_nome_sala(nome) or validar_senha(senha, MIN_SENHA_SALA)
+    if erro:
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": erro})
+        return
+    if await db.contar_salas_do_dono(usuario_id) >= MAX_SALAS_POR_USUARIO:
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": f"Você já tem {MAX_SALAS_POR_USUARIO} salas. Apague uma para criar outra."})
+        return
+    sala_id = await db.criar_sala(nome, await gerar_hash_senha(senha), usuario_id)
+    if not sala_id:
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Já existe uma sala com esse nome."})
+        return
+    log.info("sala %s criada por %s", nome, conexoes[usuario_id]["apelido"])
+    await anunciar_sala(nome)
+    await enviar_para_usuario(usuario_id, {"tipo": "sala_entrou", "nome": nome, "historico": [], "criada": True})
+
+
+async def entrar_sala_com_senha(ws, usuario_id, nome, senha):
+    if not isinstance(nome, str) or not isinstance(senha, str):
+        return
+    sala = await db.buscar_sala(nome)
+    if not sala:
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Sala não encontrada."})
+        return
+    if await db.eh_membro(sala["id"], usuario_id):
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Você já está nessa sala."})
+        return
+    if not limite_senha_sala.permitir(usuario_id):
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Muitas tentativas. Aguarde alguns minutos."})
+        return
+    if not await conferir_senha(senha, sala["senha_hash"]):
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Senha incorreta."})
+        return
+    await colocar_na_sala(sala, usuario_id, conexoes[usuario_id]["apelido"])
+
+
+async def solicitar_sala(ws, usuario_id, nome):
+    if not isinstance(nome, str):
+        return
+    sala = await db.buscar_sala(nome)
+    if not sala:
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Sala não encontrada."})
+        return
+    if await db.eh_membro(sala["id"], usuario_id):
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Você já está nessa sala."})
+        return
+    if not limite_solicitacao.permitir((usuario_id, sala["id"])):
+        await enviar(ws, {"tipo": "erro_sala", "mensagem": "Você já pediu para entrar nessa sala. Aguarde a resposta."})
+        return
+    if not await pode_enviar(ws, usuario_id):
+        return
+    apelido = conexoes[usuario_id]["apelido"]
+    texto = f"📩 Pedido para entrar na sala {sala['nome']}.\nPara aceitar, digite: /aceitar {sala['nome']} {apelido}"
+    await entregar_privada(usuario_id, {"id": sala["dono_id"], "apelido": sala["dono"]}, texto)
+    await enviar(ws, {"tipo": "solicitacao_enviada", "sala": sala["nome"], "dono": sala["dono"]})
+
+
+# ---------------------------------------------------------------
 # Comandos (interceptados no servidor; comandos inválidos são ignorados)
 # ---------------------------------------------------------------
-async def tratar_comando(ws, usuario_id, texto, destino):
+async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
     partes = texto.split(maxsplit=3)
     cmd = partes[0].lower()
 
@@ -450,13 +679,24 @@ async def tratar_comando(ws, usuario_id, texto, destino):
             return
         if await db.assumir_master_se_vago(usuario_id):
             log.info("%s agora é master", conexoes[usuario_id]["apelido"])
+            await enviar_para_usuario(usuario_id, {"tipo": "papel", "papel": db.MASTER})
             await ok("👑 Você agora é o Master.")
         else:
             await ok("Já existe um Master.")
         return
 
-    # A partir daqui, só admin ou master
     meu_papel = await db.papel(usuario_id)
+
+    # Comandos de sala: valem para qualquer um (dono da sala; admins onde indicado)
+    if cmd in ("/aceitar", "/remover", "/sairsala", "/apagarsala") or (cmd == "/apagar" and len(partes) == 1 and nome_sala):
+        await comando_sala(ok, usuario_id, meu_papel, cmd, partes, destino, nome_sala)
+        return
+
+    if cmd == "/help":
+        await ok(HELP_MASTER if meu_papel == db.MASTER else HELP_ADMIN if meu_papel >= db.ADMIN else HELP_USUARIO)
+        return
+
+    # A partir daqui, só admin ou master
     if meu_papel < db.ADMIN:
         return
 
@@ -472,10 +712,7 @@ async def tratar_comando(ws, usuario_id, texto, destino):
                 return None
         return alvo
 
-    if cmd == "/help":
-        await ok(HELP_MASTER if meu_papel == db.MASTER else HELP_ADMIN)
-
-    elif cmd == "/admin":
+    if cmd == "/admin":
         sub = partes[1].lower() if len(partes) >= 2 else ""
         if sub == "lista":
             admins = await db.listar_admins()
@@ -505,6 +742,7 @@ async def tratar_comando(ws, usuario_id, texto, destino):
                 return
             await db.definir_admin(alvo["id"], True)
             log.info("%s promovido a admin", nome)
+            await enviar_para_usuario(alvo["id"], {"tipo": "papel", "papel": db.ADMIN})
             await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": "🛡️ Você agora é Admin. Digite /help para ver os comandos."})
             await ok(f"{nome} agora é Admin.")
         elif sub == "revogar":
@@ -513,11 +751,14 @@ async def tratar_comando(ws, usuario_id, texto, destino):
                 return
             await db.definir_admin(alvo["id"], False)
             log.info("admin de %s revogado", nome)
+            await enviar_para_usuario(alvo["id"], {"tipo": "papel", "papel": db.USUARIO})
             await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": "Você não é mais Admin."})
             await ok(f"Admin de {nome} revogado.")
         else:  # transferir
             await db.transferir_master(alvo["id"])
             log.info("master transferido para %s", nome)
+            await enviar_para_usuario(alvo["id"], {"tipo": "papel", "papel": db.MASTER})
+            await enviar_para_usuario(usuario_id, {"tipo": "papel", "papel": db.ADMIN})
             await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": "👑 Você agora é o Master. Digite /help para ver os comandos."})
             await ok(f"Master transferido para {nome}. Você continua Admin.")
 
@@ -537,7 +778,6 @@ async def tratar_comando(ws, usuario_id, texto, destino):
             if alvo["id"] in conexoes:
                 conexoes[alvo["id"]]["apelido"] = novo
             await transmitir({"tipo": "renomeado", "de": alvo["apelido"], "para": novo})
-            await enviar_lista_usuarios()
             await ok(f"Nome de {alvo['apelido']} alterado para {novo}.")
 
     elif cmd == "/senha":
@@ -556,13 +796,28 @@ async def tratar_comando(ws, usuario_id, texto, destino):
                 await desconectar_usuario(alvo["id"])
             await ok(f"Senha de {alvo['apelido']} redefinida. As sessões dele foram encerradas.")
 
+    elif cmd == "/liberar":
+        if len(partes) < 2:
+            await ok("Uso: /liberar Usuario")
+            return
+        alvo = await buscar_alvo(partes[1])
+        if not alvo:
+            return
+        await db.liberar_bloqueio(alvo["id"])
+        detector_flood.zerar(alvo["id"])
+        if alvo["id"] in conexoes:
+            conexoes[alvo["id"]]["bloqueado_ate"] = None
+        await enviar_para_usuario(alvo["id"], {"tipo": "desbloqueado", "mensagem": "✅ Seu envio foi liberado por um Admin."})
+        log.info("%s liberado por %s", alvo["apelido"], conexoes[usuario_id]["apelido"])
+        await ok(f"{alvo['apelido']} liberado.")
+
     elif cmd == "/apagar":
         eu = conexoes[usuario_id]["apelido"]
         if len(partes) == 1:
             if destino is None:
-                await db.apagar_conversa_geral()
-                await transmitir({"tipo": "apagado", "escopo": "geral"})
-                await ok("Histórico do Geral apagado.")
+                await db.apagar_mural()
+                await transmitir({"tipo": "apagado", "escopo": "mural"})
+                await ok("Mural de Recados apagado.")
                 return
             alvo = await buscar_alvo(destino, exigir_permissao=False)
             if not alvo:
@@ -589,16 +844,101 @@ async def tratar_comando(ws, usuario_id, texto, destino):
             await ok(f"Mensagens de {alvo['apelido']} apagadas.")
 
 
+async def comando_sala(ok, usuario_id, meu_papel, cmd, partes, destino, nome_sala):
+    eu = conexoes[usuario_id]["apelido"]
+
+    # /apagar dentro de uma sala: dono ou admin
+    if cmd == "/apagar":
+        sala = await db.buscar_sala(nome_sala)
+        if not sala or (sala["dono_id"] != usuario_id and meu_papel < db.ADMIN):
+            return
+        await db.apagar_mensagens_da_sala(sala["id"])
+        await enviar_para_usuarios(await db.membros_da_sala(sala["id"]), {"tipo": "apagado", "escopo": "sala", "sala": sala["nome"]})
+        await ok(f"Mensagens da sala {sala['nome']} apagadas.")
+        return
+
+    if len(partes) < 2:
+        await ok(f"Uso: {cmd} Sala" + (" Nome" if cmd in ("/aceitar", "/remover") else ""))
+        return
+    sala = await db.buscar_sala(partes[1])
+    if not sala:
+        await ok(f"Sala {partes[1]} não encontrada.")
+        return
+    dono = sala["dono_id"] == usuario_id
+
+    if cmd == "/aceitar":
+        if not dono:
+            await ok("Só quem criou a sala pode aceitar pessoas.")
+            return
+        # Sem Nome: numa conversa privada, aceita a pessoa da conversa.
+        nome = partes[2] if len(partes) >= 3 else destino
+        if not nome:
+            await ok(f"Uso: /aceitar {sala['nome']} Nome")
+            return
+        alvo = await db.buscar_usuario_por_apelido(nome)
+        if not alvo:
+            await ok(f"Usuário {nome} não encontrado.")
+            return
+        if not await colocar_na_sala(sala, alvo["id"], alvo["apelido"]):
+            await ok(f"{alvo['apelido']} já está na sala {sala['nome']}.")
+            return
+        await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": f"✅ {eu} colocou você na sala {sala['nome']}."})
+        log.info("%s aceito na sala %s", alvo["apelido"], sala["nome"])
+        await ok(f"{alvo['apelido']} agora está na sala {sala['nome']}.")
+
+    elif cmd == "/remover":
+        if not dono and meu_papel < db.ADMIN:
+            await ok("Só quem criou a sala pode remover pessoas.")
+            return
+        if len(partes) < 3:
+            await ok(f"Uso: /remover {sala['nome']} Nome")
+            return
+        alvo = await db.buscar_usuario_por_apelido(partes[2])
+        if not alvo or alvo["id"] == sala["dono_id"]:
+            await ok("Não é possível remover essa pessoa.")
+            return
+        if not await db.remover_membro(sala["id"], alvo["id"]):
+            await ok(f"{alvo['apelido']} não está na sala {sala['nome']}.")
+            return
+        await enviar_para_usuario(alvo["id"], {"tipo": "sala_saiu", "nome": sala["nome"], "mensagem": f"Você foi removido da sala {sala['nome']}."})
+        await avisar_sala(sala["id"], sala["nome"], f"{alvo['apelido']} foi removido da sala.")
+        await anunciar_sala(sala["nome"])
+        await ok(f"{alvo['apelido']} removido da sala {sala['nome']}.")
+
+    elif cmd == "/sairsala":
+        if dono:
+            await ok("Você é o dono. Para encerrar a sala use /apagarsala " + sala["nome"])
+            return
+        if not await db.remover_membro(sala["id"], usuario_id):
+            await ok(f"Você não está na sala {sala['nome']}.")
+            return
+        await enviar_para_usuario(usuario_id, {"tipo": "sala_saiu", "nome": sala["nome"], "mensagem": f"Você saiu da sala {sala['nome']}."})
+        await avisar_sala(sala["id"], sala["nome"], f"{eu} saiu da sala.")
+        await anunciar_sala(sala["nome"])
+
+    elif cmd == "/apagarsala":
+        if not dono and meu_papel < db.ADMIN:
+            await ok("Só quem criou a sala pode apagá-la.")
+            return
+        await db.apagar_sala(sala["id"])
+        log.info("sala %s apagada por %s", sala["nome"], eu)
+        await transmitir({"tipo": "sala_apagada", "nome": sala["nome"]})
+        await ok(f"Sala {sala['nome']} apagada.")
+
+
 # ---------------------------------------------------------------
 # Inicialização
 # ---------------------------------------------------------------
 async def manutencao(app):
     async def loop():
         while True:
-            await asyncio.sleep(3600)
+            await asyncio.sleep(300)
             try:
+                apagadas = await db.apagar_expiradas(TTL_HORAS)
+                if apagadas:
+                    log.info("%d mensagens expiradas apagadas", apagadas)
                 await db.limpar_sessoes_expiradas()
-                for limite in (limite_login, limite_mensagens, limite_senha_admin):
+                for limite in LIMITES:
                     limite.limpar()
             except Exception:
                 log.exception("erro na manutenção")
@@ -611,6 +951,7 @@ async def manutencao(app):
 async def ao_iniciar(app):
     await db.conectar(DATABASE_URL)
     log.info("banco conectado")
+    await db.apagar_expiradas(TTL_HORAS)
     if not SENHA_ADMIN:
         log.warning("ADMIN_PASSWORD não definida: ninguém conseguirá virar admin")
 
