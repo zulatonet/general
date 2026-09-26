@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SalaVip — Chat</title>
+<meta name="description" content="SalaVip: bate-papo com mural de recados, conversas privadas e salas com senha. Entre e converse!">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SalaVip">
+<meta property="og:title" content="{{OG_TITULO}}">
+<meta property="og:description" content="{{OG_DESCRICAO}}">
+<meta property="og:url" content="{{OG_URL}}">
+<meta property="og:image" content="{{OG_IMAGEM}}">
+<meta property="og:image:secure_url" content="{{OG_IMAGEM}}">
+<meta property="og:image:type" content="{{OG_IMAGEM_TIPO}}">
+<meta property="og:image:width" content="{{OG_IMAGEM_L}}">
+<meta property="og:image:height" content="{{OG_IMAGEM_A}}">
+<meta property="og:image:alt" content="SalaVip">
+<meta property="og:locale" content="pt_BR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="{{OG_IMAGEM}}">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#03110b">
+<link rel="apple-touch-icon" href="/icones/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SalaVip">
+<link rel="icon" type="image/png" href="/icones/icone-192.png">
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  background: #1e1e2f; color: #eee;
+  display: flex; flex-direction: column;
+  font-size: 16px;
+}
+button { font-family: inherit; }
+#topo { padding: 10px 12px; background: #0a0a12; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+#topo-esq { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#menu { display: none; position: relative; background: none; border: 1px solid #444; color: #eee; border-radius: 8px; padding: 4px 10px; font-size: 18px; cursor: pointer; }
+#menu .ponto { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: #ff5252; }
+#meunome { font-weight: bold; font-size: 15px; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sair { background: none; border: 1px solid #444; color: #aac; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; flex-shrink: 0; }
+#aviso-app { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2a2a55; font-size: 13px; color: #dde; flex-shrink: 0; }
+#aviso-app span { flex: 1; min-width: 0; }
+#aviso-app button { white-space: nowrap; flex-shrink: 0; border: none; border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: bold; cursor: pointer; background: #6a6ad0; color: white; }
+#aviso-app #aviso-fechar { background: none; color: #99a; padding: 4px 6px; font-size: 16px; }
+#corpo { flex: 1; display: flex; overflow: hidden; min-height: 0; position: relative; }
+
+/* Barra lateral */
+#sidebar { width: 250px; background: #14141f; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+#busca-caixa { padding: 8px; flex-shrink: 0; }
+#busca { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #333; background: #1e1e2f; color: #eee; font-size: 14px; }
+#lista { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.secao { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: .03em; }
+.secao button { background: #2a2a3f; border: none; color: #cce; border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; text-transform: none; }
+.dica-vazia { font-size: 12px; color: #667; padding: 2px 8px 6px; }
+.item { padding: 9px 8px; cursor: pointer; border-radius: 8px; margin-bottom: 3px; font-size: 14px; line-height: 1.2; user-select: none; display: flex; align-items: center; gap: 7px; }
+.item:hover { background: #1f1f30; }
+.item.selecionado { background: #4a4a8f; }
+.item.mural { background: #2a5a3f; }
+.item.mural.selecionado { background: #3a8a5f; }
+.item .nome-item { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item.fora { color: #99a; }
+.item .sub { font-size: 11px; color: #778; }
+.pino { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: .25; flex-shrink: 0; }
+.pino.fixo { opacity: 1; }
+.item:hover .pino { opacity: .7; }
+.item:hover .pino.fixo { opacity: 1; }
+.bolinha { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.bolinha.online { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+.bolinha.offline { background: #f44336; }
+.bolinha.conectando { background: #ffb300; }
+.badge-nao-lidas { background: #ff5252; color: white; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 1px 6px; flex-shrink: 0; }
+.mais { font-size: 12px; color: #778; padding: 6px 8px; }
+
+/* Conversa */
+#chat { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#chat-titulo { padding: 8px 12px; background: #0a0a12; border-bottom: 1px solid #222; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+#titulo-textos { flex: 1; min-width: 0; }
+#titulo-nome { font-size: 15px; color: #dde; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#titulo-sub { font-size: 12px; color: #889; margin-top: 2px; }
+#titulo-acao { background: none; border: 1px solid #553; color: #ec8; border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+#mensagens { flex: 1; padding: 12px; overflow-y: auto; }
+.msg { margin-bottom: 8px; padding: 10px 14px; border-radius: 12px; max-width: 85%; font-size: 16px; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
+.msg.enviada { background: #4a4a8f; margin-left: auto; }
+.msg.recebida { background: #2a2a3f; }
+.msg.sistema { background: #333; color: #bbb; font-size: 13px; text-align: center; margin: 8px auto; max-width: 100%; }
+.msg.confirmacao { background: #2a5a3f; color: #cfc; font-size: 13px; text-align: left; margin: 8px auto; max-width: 100%; font-family: monospace; }
+.msg .nome { font-weight: bold; font-size: 13px; color: #aac; margin-bottom: 2px; }
+.msg .hora { font-size: 11px; color: #999; margin-top: 4px; }
+.vazio { text-align: center; color: #667; font-size: 13px; margin-top: 30px; }
+#form { display: flex; align-items: flex-end; padding: 8px; background: #14141f; gap: 6px; flex-shrink: 0; }
+#texto { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; font-size: 16px; font-family: inherit; line-height: 1.3; background: #1e1e2f; color: #eee; min-width: 0; resize: none; height: 46px; max-height: 160px; overflow-y: auto; }
+#texto:disabled { opacity: 0.5; }
+#enviar { padding: 12px 16px; border: none; border-radius: 8px; background: #4a4a8f; color: white; cursor: pointer; font-size: 16px; font-weight: bold; }
+#enviar:disabled { opacity: 0.5; }
+#microfone { width: 50px; height: 46px; border: none; border-radius: 50%; background: #4a4a8f; color: white; font-size: 20px; cursor: pointer;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; flex-shrink: 0; }
+#microfone.gravando { background: #d33; transform: scale(1.15); }
+#gravando { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 12px; min-height: 46px; border-radius: 8px;
+  border: 1px solid #733; background: #1e1e2f; color: #fbb; font-size: 14px; min-width: 0; }
+#gravando.cancelar { border-color: #aa5; color: #ffd; }
+.ponto-rec { width: 10px; height: 10px; border-radius: 50%; background: #f44; animation: piscar 1s infinite; flex-shrink: 0; }
+@keyframes piscar { 50% { opacity: .2; } }
+#rec-tempo { font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.barra-rec { flex: 1; height: 4px; background: #333; border-radius: 2px; overflow: hidden; min-width: 30px; }
+.barra-rec div { height: 100%; width: 0; background: #f44; }
+#rec-dica { font-size: 12px; color: #aaa; white-space: nowrap; }
+.audio-msg { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn-audio { background: rgba(255,255,255,.14); border: none; color: white; border-radius: 18px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
+.btn-audio:disabled { opacity: .6; cursor: default; }
+.audio-estado { font-size: 13px; color: #ccd; }
+
+/* Modais */
+.modal {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.modal .caixa {
+  background: #2a2a3f; padding: 26px; border-radius: 16px; max-width: 90%;
+  width: 400px; text-align: center; position: relative;
+}
+.modal h2 { margin: 0 0 8px 0; font-size: 20px; }
+.modal .logo { display: block; width: 128px; height: 128px; margin: -6px auto 6px; border-radius: 50%; }
+.modal .dica { color: #99a; font-size: 13px; margin-bottom: 16px; }
+.modal input {
+  width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #444;
+  font-size: 16px; background: #1e1e2f; color: #eee; margin-bottom: 12px;
+}
+.modal button.principal {
+  width: 100%; padding: 12px; border: none; border-radius: 8px;
+  background: #4a4a8f; color: white; font-size: 16px; font-weight: bold; cursor: pointer;
+}
+.modal button.secundario {
+  width: 100%; padding: 12px; border: 1px solid #4a4a8f; border-radius: 8px;
+  background: none; color: #ccf; font-size: 15px; font-weight: bold; cursor: pointer;
+}
+.modal button:disabled { opacity: 0.5; }
+.modal .fechar { position: absolute; top: 10px; right: 12px; background: none; border: none; color: #99a; font-size: 20px; cursor: pointer; }
+.modal .erro { color: #ff6b6b; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+.modal .info { color: #8c8; font-size: 13px; min-height: 18px; margin-top: 10px; }
+.modal .ou { color: #667; font-size: 12px; margin: 14px 0; }
+#rodape-lateral { padding: 8px; border-top: 1px solid #222; flex-shrink: 0; }
+#rodape-lateral button { width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #333; background: #1e1e2f; color: #cce; font-size: 13px; cursor: pointer; }
+#modal-notif .caixa { text-align: left; max-height: 90vh; overflow-y: auto; }
+#modal-notif h2 { text-align: center; }
+#modal-notif button { margin-top: 8px; }
+#notif-estado { font-size: 14px; line-height: 1.7; margin: 10px 0; }
+#notif-resultado { white-space: pre-wrap; text-align: left; }
+#modal-notif details { margin-top: 14px; font-size: 13px; color: #bbc; }
+#modal-notif summary { cursor: pointer; color: #ccf; font-weight: bold; }
+#modal-notif ol { padding-left: 18px; line-height: 1.5; }
+/* Tela de Pixels */
+.item.tela { background: #2a2a5a; }
+.item.tela.selecionado { background: #4a4a9f; }
+.item.ranking { background: #3a3320; }
+.item.ranking.selecionado { background: #6a5a20; }
+#tela-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#tela-viewport { flex: 1; position: relative; overflow: hidden; background: #101018; touch-action: none; cursor: crosshair; min-height: 120px; }
+#tela-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: pixelated; image-rendering: crisp-edges; box-shadow: 0 0 0 1px #333; }
+#tela-mira { position: absolute; pointer-events: none; outline: 2px solid #fff; box-shadow: 0 0 0 3px #000; display: none; }
+#tela-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; }
+#tela-zoom button { width: 40px; height: 40px; border-radius: 50%; border: 1px solid #444; background: rgba(20,20,31,.85); color: #eee; font-size: 18px; cursor: pointer; }
+#tela-carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #889; font-size: 14px; }
+#tela-painel { background: #14141f; padding: 8px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+#tela-info { font-size: 13px; color: #ccd; min-height: 17px; }
+#tela-linha { display: flex; gap: 8px; align-items: stretch; }
+#tela-paleta { display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; flex: 1; }
+.cor { aspect-ratio: 1; min-height: 24px; border-radius: 6px; border: 2px solid #333; cursor: pointer; padding: 0; }
+.cor.ativa { border-color: #fff; box-shadow: 0 0 0 2px #02BE01; }
+#tela-pintar { border: none; border-radius: 8px; background: #02BE01; color: white; font-weight: bold; font-size: 16px; min-width: 110px; cursor: pointer; padding: 0 12px; }
+#tela-pintar:disabled { background: #3a3a4a; color: #aab; cursor: default; }
+#tela-barra { display: flex; align-items: center; gap: 8px; }
+#tela-cargas { font-size: 14px; font-weight: bold; color: #ffd54a; background: #2a2a1a; border: 1px solid #554; border-radius: 16px; padding: 5px 10px; white-space: nowrap; }
+#tela-barra .espaco { flex: 1; }
+#tela-barra button { border: 1px solid #444; background: #1e1e2f; color: #eee; border-radius: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+#tela-barra #btn-convidar { background: #02BE01; border-color: #02BE01; font-weight: bold; }
+#modal-convite .caixa { text-align: left; }
+#modal-convite h2 { text-align: center; }
+#convite-previa { width: 100%; border-radius: 8px; image-rendering: pixelated; margin: 6px 0 10px; border: 1px solid #444; }
+#convite-link { font-size: 14px; }
+#modal-convite .regras { font-size: 13px; color: #bbc; line-height: 1.5; margin: 8px 0; }
+#modal-convite button { margin-top: 8px; }
+#ranking-abas { display: flex; gap: 6px; margin-bottom: 10px; }
+#ranking-abas button { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #444; background: #1e1e2f; color: #ccd; cursor: pointer; font-size: 14px; }
+#ranking-abas button.ativa { background: #4a4a8f; color: white; border-color: #4a4a8f; }
+.rank { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: #2a2a3f; margin-bottom: 6px; font-size: 15px; }
+.rank.eu { outline: 2px solid #02BE01; }
+.rank .pos { width: 34px; text-align: center; font-weight: bold; color: #aab; }
+.rank .quem { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .valor { font-weight: bold; color: #ffd54a; white-space: nowrap; }
+.rank .sub2 { font-size: 12px; color: #99a; white-space: nowrap; }
+#tela-recado { padding: 8px 12px; background: #2a5a3f; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+@media (max-width: 700px) {
+  #tela-paleta { grid-template-columns: repeat(8, 1fr); }
+  #tela-pintar { min-width: 96px; }
+}
+.escondido { display: none !important; }
+
+/* Celular: barra lateral vira menu deslizante */
+#veu { display: none; }
+@media (max-width: 700px) {
+  #menu { display: block; }
+  #sidebar {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 50;
+    transform: translateX(-100%); transition: transform .2s ease;
+  }
+  #sidebar.aberto { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,.5); }
+  #veu.aberto { display: block; position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 40; }
+}
+</style>
+</head>
+<body data-convite="{{CONVITE_DE}}">
+<div id="modal-nome" class="modal escondido">
+  <form class="caixa" id="modal-form">
+    <img class="logo" src="/icones/logo-256.png" alt="SalaVip" width="128" height="128">
+    <h2>Entrar na SalaVip</h2>
+    <div class="dica">Primeira vez? Escolha um nome e uma senha — a conta é criada na hora.</div>
+    <div class="erro" id="modal-erro"></div>
+    <input id="modal-input" placeholder="Seu nome" maxlength="20" autocomplete="username" autocapitalize="off">
+    <input id="modal-senha" type="password" placeholder="Senha (mínimo 6 caracteres)" maxlength="128" autocomplete="current-password">
+    <button id="modal-btn" class="principal" type="submit">Entrar</button>
+  </form>
+</div>
+
+<div id="modal-criar" class="modal escondido">
+  <form class="caixa" id="criar-form">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2>Criar sala</h2>
+    <div class="dica">A sala aparece para todos. Quem tiver a senha entra direto; os outros pedem para você.</div>
+    <div class="erro" id="criar-erro"></div>
+    <input id="criar-nome" placeholder="Nome da sala (sem espaços)" maxlength="20" autocomplete="off" autocapitalize="off">
+    <input id="criar-senha" type="password" placeholder="Senha da sala (mínimo 4)" maxlength="128" autocomplete="new-password">
+    <button class="principal" type="submit">Criar</button>
+  </form>
+</div>
+
+<div id="modal-sala" class="modal escondido">
+  <div class="caixa">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2 id="sala-titulo">🔒 Sala</h2>
+    <div class="dica" id="sala-dica"></div>
+    <div class="erro" id="sala-erro"></div>
+    <form id="sala-form">
+      <input id="sala-senha" type="password" placeholder="Senha da sala" maxlength="128" autocomplete="off">
+      <button class="principal" type="submit">Entrar com senha</button>
+    </form>
+    <div class="ou">— ou —</div>
+    <button class="secundario" id="sala-solicitar">Solicitar entrada</button>
+    <div class="info" id="sala-info"></div>
+  </div>
+</div>
+
+<div id="modal-notif" class="modal escondido">
+  <div class="caixa">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2>🔔 Notificações</h2>
+    <div id="notif-estado">Verificando...</div>
+    <button class="principal" id="notif-ativar">Ativar notificações neste aparelho</button>
+    <button class="secundario" id="notif-testar">Testar agora</button>
+    <button class="secundario" id="notif-testar-atraso">Testar em 15 s (feche o app para ver)</button>
+    <div class="info" id="notif-resultado"></div>
+    <details>
+      <summary>Não chegou? Veja o que liberar no Android</summary>
+      <ol>
+        <li><b>Notificações:</b> Configurações → Apps → <b>Chrome</b> (e <b>SalaVip</b>, se instalou) → Notificações → permitir tudo, inclusive a categoria do site.</li>
+        <li><b>Bateria:</b> Configurações → Apps → Chrome → Bateria → <b>Sem restrições</b>. Faça o mesmo no app SalaVip.</li>
+        <li><b>No Chrome:</b> ⋮ → Configurações → Configurações do site → Notificações → <b>chat.salavip.live</b> permitido.</li>
+        <li><b>Não deslize o app para fora dos recentes.</b> Em muitos celulares isso força a parada do Chrome e nada chega até abrir de novo. Só aperte "voltar" ou "início".</li>
+        <li><b>Xiaomi / Redmi / Poco:</b> Configurações → Apps → Gerenciar apps → Chrome → <b>Início automático</b> ligado e Economia de bateria → <b>Sem restrições</b>. Nos recentes, puxe o card do app para baixo e toque no <b>cadeado</b>.</li>
+        <li><b>Samsung:</b> Configurações → Bateria → Limites de uso em segundo plano → <b>Apps que nunca suspendem</b> → adicione Chrome e SalaVip.</li>
+        <li><b>Motorola / outros:</b> Configurações → Apps → Chrome → Bateria → <b>Sem restrições</b> / "Permitir atividade em segundo plano".</li>
+        <li>Confira se o <b>Não perturbe</b> está desligado.</li>
+      </ol>
+      Mensagens seguidas da mesma conversa aparecem juntas numa notificação só, com o total entre parênteses.
+    </details>
+  </div>
+</div>
+
+<div id="modal-convite" class="modal escondido">
+  <div class="caixa">
+    <button type="button" class="fechar" data-fechar>✕</button>
+    <h2>📤 Convide e ganhe cargas</h2>
+    <img id="convite-previa" alt="Tela de Pixels agora">
+    <div class="regras">
+      Cada amigo que entrar pelo seu link <b>ganha <span id="cv-bonus">15</span> cargas ⚡</b>.<br>
+      Quando ele pintar <span id="cv-minimo">10</span> pixels, <b>você ganha <span id="cv-recompensa">20</span> cargas</b>.<br>
+      Cargas deixam pintar sem esperar os 10 segundos.
+    </div>
+    <input id="convite-link" readonly>
+    <button class="principal" id="convite-compartilhar">📤 Compartilhar com a imagem da tela</button>
+    <button class="secundario" id="convite-whatsapp">WhatsApp</button>
+    <button class="secundario" id="convite-copiar">Copiar link</button>
+    <div class="info" id="convite-status"></div>
+  </div>
+</div>
+
+<div id="topo">
+  <div id="topo-esq">
+    <button id="menu" aria-label="Conversas">☰<span class="ponto escondido" id="menu-ponto"></span></button>
+    <div id="meunome"><span id="status" class="bolinha conectando"></span><span id="nome-texto">Conectando...</span></div>
+  </div>
+  <button id="sair" class="escondido">Sair</button>
+</div>
+<div id="aviso-app" class="escondido">
+  <span id="aviso-texto"></span>
+  <button id="btn-notif" class="escondido">🔔 Ativar notificações</button>
+  <button id="btn-instalar" class="escondido">📲 Instalar app</button>
+  <button id="aviso-fechar" aria-label="Fechar">✕</button>
+</div>
+<div id="corpo">
+  <div id="veu"></div>
+  <div id="sidebar">
+    <div id="busca-caixa"><input id="busca" placeholder="🔍 Buscar pessoas e salas" autocomplete="off"></div>
+    <div id="lista"></div>
+    <div id="rodape-lateral"><button id="abrir-notif">🔔 Notificações</button></div>
+  </div>
+  <div id="chat">
+    <div id="chat-titulo">
+      <div id="titulo-textos"><div id="titulo-nome">📢 Mural de Recados</div><div id="titulo-sub"></div></div>
+      <button id="titulo-acao" class="escondido"></button>
+    </div>
+    <div id="tela-area" class="escondido">
+      <div id="tela-viewport">
+        <canvas id="tela-canvas" width="320" height="180"></canvas>
+        <div id="tela-mira"></div>
+        <div id="tela-carregando">Carregando a tela...</div>
+        <div id="tela-zoom">
+          <button id="zoom-mais" aria-label="Aproximar">＋</button>
+          <button id="zoom-menos" aria-label="Afastar">－</button>
+          <button id="zoom-ajustar" aria-label="Ver a tela inteira">⤢</button>
+        </div>
+      </div>
+      <div id="tela-painel">
+        <div id="tela-barra">
+          <span id="tela-cargas" title="Cargas: pixels guardados para pintar sem esperar">⚡ 0</span>
+          <span class="espaco"></span>
+          <button id="btn-ranking">🏆 Ranking</button>
+          <button id="btn-convidar">📤 Convidar</button>
+        </div>
+        <div id="tela-info">Toque num pixel, escolha a cor e aperte Pintar.</div>
+        <div id="tela-linha">
+          <div id="tela-paleta"></div>
+          <button id="tela-pintar" disabled>Pintar</button>
+        </div>
+      </div>
+      <div id="tela-recado" class="escondido"></div>
+    </div>
+    <div id="mensagens"></div>
+    <div id="form">
+      <textarea id="texto" rows="1" placeholder="Mensagem..." disabled autocomplete="off" maxlength="2000"></textarea>
+      <div id="gravando" class="escondido">
+        <span class="ponto-rec"></span><span id="rec-tempo">0:00</span>
+        <div class="barra-rec"><div id="rec-barra"></div></div>
+        <span id="rec-dica">◀ deslize para cancelar</span>
+      </div>
+      <button id="enviar" disabled>Enviar</button>
+      <button id="microfone" class="escondido" title="Segure para gravar um áudio (até 10 s)" aria-label="Gravar áudio">🎤</button>
+    </div>
+  </div>
+</div>
+<script>
+// Limpa dados da versão antiga (identificação por device_id)
+try { localStorage.removeItem("chat_device_id"); localStorage.removeItem("chat_nome"); } catch (e) {}
+
+const MURAL = "MURAL";
+const TELA = "TELA";
+const RANKING = "RANKING";
+const LIMITE_LISTA = 200;   // máximo de pessoas renderizadas em "Todos" sem busca
+const ADMIN = 1, MASTER = 2;
+
+let ws = null;
+let meuNome = "";
+let meuPapel = 0;
+let ttlHoras = 24;
+let bloqueadoAte = null;
+let timerDesbloqueio = null;
+let selecionado = TELA;
+let conversas = {};
+let naoLidas = {};
+let usuarios = new Map();   // apelido -> online
+let contatos = new Set();
+let salas = new Map();      // nome -> {nome, dono, membros, membro}
+let salaModal = null;
+let tentativas = 0;
+let timerReconexao = null;
+
+const el = (id) => document.getElementById(id);
+const chaveUsuario = (nome) => "u:" + nome;
+const chaveSala = (nome) => "s:" + nome;
+const ehSala = (k) => k.startsWith("s:");
+const ehPrivada = (k) => k.startsWith("u:");
+const nomeDaChave = (k) => k.slice(2);
+const conectado = () => ws && ws.readyState === WebSocket.OPEN;
+
+function enviarWs(dados) { if (conectado()) ws.send(JSON.stringify(dados)); }
+
+function definirStatus(estado, texto) {
+  el("status").className = "bolinha " + estado;
+  el("nome-texto").textContent = texto;
+}
+
+function atualizarNomeTopo() {
+  const selo = meuPapel === MASTER ? " 👑" : meuPapel === ADMIN ? " 🛡️" : "";
+  definirStatus("online", meuNome + selo);
+}
+
+function mostrarLogin(erro) {
+  el("modal-erro").textContent = erro || "";
+  el("modal-nome").classList.remove("escondido");
+  el("sair").classList.add("escondido");
+  definirStatus("offline", "Desconectado");
+  atualizarEntrada();
+  el("modal-input").focus();
+}
+
+function paraMsgs(lista) {
+  return (lista || []).map(m => ({
+    remetente: m.remetente, texto: m.texto, hora: m.hora, audio: m.audio,
+    classe: m.remetente === meuNome ? "enviada" : "recebida"
+  }));
+}
+
+function empurrar(chave, m) {
+  if (!conversas[chave]) conversas[chave] = [];
+  conversas[chave].push(m);
+}
+
+// ---------------------------------------------------------------
+// Conexão
+// ---------------------------------------------------------------
+function conectar() {
+  clearTimeout(timerReconexao);
+  const protocolo = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(protocolo + "//" + location.host + "/ws");
+  definirStatus("conectando", "Conectando...");
+
+  ws.onmessage = (event) => {
+    const d = JSON.parse(event.data);
+    const trata = TRATADORES[d.tipo];
+    if (trata) trata(d);
+  };
+
+  ws.onclose = (event) => {
+    atualizarEntrada();
+    if (event.code === 4001) {
+      ws = null;
+      mostrarLogin(meuNome ? "Sua sessão foi encerrada. Entre novamente." : "");
+      meuNome = "";
+      return;
+    }
+    if (!ws) return;  // saída manual
+    if (event.code === 4002) {
+      adicionarSistema("⚠️ Você está com o chat aberto em muitas abas/aparelhos. Feche alguns e aguarde.");
+      tentativas = Math.max(tentativas, 4);
+    }
+    tentativas++;
+    const espera = Math.min(30000, 1000 * 2 ** Math.min(tentativas, 5));
+    definirStatus("conectando", "Reconectando...");
+    timerReconexao = setTimeout(conectar, espera);
+  };
+}
+
+const TRATADORES = {
+  bemvindo(d) {
+    tentativas = 0;
+    meuNome = d.nome;
+    meuPapel = d.papel;
+    ttlHoras = d.ttl_horas;
+    definirBloqueio(d.bloqueado_ate);
+    atualizarNomeTopo();
+    el("modal-nome").classList.add("escondido");
+    el("sair").classList.remove("escondido");
+    conversas = { [MURAL]: paraMsgs(d.historico.mural) };
+    for (const [quem, msgs] of Object.entries(d.historico.privadas || {})) conversas[chaveUsuario(quem)] = paraMsgs(msgs);
+    for (const [sala, msgs] of Object.entries(d.historico.salas || {})) conversas[chaveSala(sala)] = paraMsgs(msgs);
+    naoLidas = {};
+    for (const [quem, qtd] of Object.entries(d.nao_lidas || {})) naoLidas[chaveUsuario(quem)] = qtd;
+    usuarios = new Map(d.usuarios.map(u => [u.apelido, u.online]));
+    contatos = new Set(d.contatos);
+    salas = new Map(d.salas.map(s => [s.nome, s]));
+    iniciarTela(d.tela);
+    definirCargas(d.tela.cargas || 0);
+    const aindaExiste = selecionado === MURAL || selecionado === TELA || selecionado === RANKING || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
+    selecionar(aindaExiste ? selecionado : MURAL, false);
+    if (conversaPendente) { abrirChave(conversaPendente); conversaPendente = null; }
+    if (pushSuportado && Notification.permission === "granted") inscreverPush();
+    atualizarAviso();
+  },
+  erro(d) { adicionarSistema(d.mensagem); },
+  sistema(d) { adicionarSistema(d.mensagem); },
+  comando_ok(d) { adicionar(selecionado, { texto: d.mensagem, classe: "confirmacao" }); },
+  presenca(d) { usuarios.set(d.apelido, d.online); renderizarLista(); },
+  contatos(d) { contatos = new Set(d.contatos); renderizarLista(); },
+  papel(d) { meuPapel = d.papel; atualizarNomeTopo(); atualizarTitulo(); atualizarEntrada(); },
+  msg(d) {
+    const chave = d.sala ? chaveSala(d.sala) : d.privado ? chaveUsuario(d.de) : MURAL;
+    if (chave === MURAL) setTimeout(atualizarRecadoTela, 0);
+    const minha = d.de === meuNome;
+    empurrar(chave, { remetente: d.de, texto: d.texto, hora: d.hora, audio: d.audio, classe: minha ? "enviada" : "recebida" });
+    if (selecionado === chave) {
+      renderizarConversa();
+      if (d.privado) enviarWs({ tipo: "marcar_lidas", interlocutor: d.de });
+    } else if (!minha && chave !== MURAL) {
+      naoLidas[chave] = (naoLidas[chave] || 0) + 1;
+      tocarSom();
+    }
+    renderizarLista();
+  },
+  msg_enviada(d) {
+    empurrar(chaveUsuario(d.para), { remetente: meuNome, texto: d.texto, hora: d.hora, audio: d.audio, classe: "enviada" });
+    if (selecionado === chaveUsuario(d.para)) renderizarConversa();
+  },
+  renomeado(d) { renomear(d.de, d.para); },
+  pixels(d) { aplicarPixels(d.p); },
+  pixel_ok(d) { definirEsperaTela(d.espera); if (typeof d.cargas === "number") definirCargas(d.cargas); },
+  pixel_espera(d) {
+    definirEsperaTela(d.espera);
+    avisoTela(d.mensagem || (cargas ? "Espere um instante…" : "⏳ Espere a contagem ou convide amigos para ganhar cargas ⚡"));
+  },
+  cargas(d) { definirCargas(d.cargas); if (d.mensagem) avisoTela(d.mensagem); },
+  convite_ativado(d) {
+    definirCargas(d.cargas);
+    const t = "🎉 " + d.apelido + " entrou pelo seu convite e já está pintando: +" + d.ganhou + " cargas ⚡";
+    avisoTela(t);
+    if (selecionado !== TELA) adicionarSistema(t);
+    tocarSom();
+  },
+  convite(d) { mostrarConvite(d); },
+  ranking(d) { mostrarRanking(d); },
+  pixel_info(d) { mostrarInfoPixel(d); },
+  audio_ouvido(d) {
+    for (const msgs of Object.values(conversas)) msgs.forEach(m => { if (m.audio && m.audio.id === d.id) m.audio.ouvido = true; });
+    renderizarConversa();
+  },
+  apagado(d) { aplicarApagado(d); },
+  bloqueado(d) { definirBloqueio(d.ate); adicionarSistema(d.mensagem + (bloqueadoAte ? " Liberado em " + formatarHora(d.ate) + "." : "")); },
+  desbloqueado(d) { definirBloqueio(null); adicionarSistema(d.mensagem); },
+  sala_atualizada(d) {
+    const atual = salas.get(d.nome);
+    salas.set(d.nome, { nome: d.nome, dono: d.dono, membros: d.membros, membro: atual ? atual.membro : d.dono === meuNome });
+    if (salaModal === d.nome) preencherModalSala();
+    renderizarLista();
+    if (selecionado === chaveSala(d.nome)) atualizarTitulo();
+  },
+  sala_entrou(d) {
+    const s = salas.get(d.nome) || { nome: d.nome, dono: meuNome, membros: 1 };
+    s.membro = true;
+    salas.set(d.nome, s);
+    conversas[chaveSala(d.nome)] = paraMsgs(d.historico);
+    if (salaModal === d.nome || d.criada) {
+      fecharModais();
+      selecionar(chaveSala(d.nome));
+    } else {
+      renderizarLista();
+    }
+  },
+  sala_saiu(d) { sairDaSala(d.nome, d.mensagem); },
+  sala_apagada(d) {
+    const eraMembro = salas.get(d.nome)?.membro;
+    salas.delete(d.nome);
+    sairDaSala(d.nome, eraMembro ? "A sala " + d.nome + " foi apagada." : null);
+    if (salaModal === d.nome) fecharModais();
+  },
+  aviso_sala(d) { adicionar(chaveSala(d.sala), { texto: d.mensagem, classe: "sistema" }); },
+  erro_sala(d) {
+    const alvo = !el("modal-criar").classList.contains("escondido") ? "criar-erro" : !el("modal-sala").classList.contains("escondido") ? "sala-erro" : null;
+    if (alvo) el(alvo).textContent = d.mensagem; else adicionarSistema(d.mensagem);
+  },
+  estado_push(d) { aparelhosNoServidor = d.aparelhos; atualizarPainelNotif(); },
+  push_teste(d) {
+    const linhas = d.aparelhos === 0
+      ? ["❌ O servidor não tem nenhum aparelho seu cadastrado. Toque em “Ativar notificações neste aparelho”."]
+      : d.resultados.map(r => (r.ok ? "✅ " : "❌ ") + r.detalhe);
+    if (d.aparelhos && d.resultados.some(r => r.ok)) linhas.push("\nSe o serviço aceitou e mesmo assim nada apareceu, o bloqueio está no Android: veja as dicas abaixo.");
+    el("notif-resultado").textContent = "Teste pelo servidor (" + d.aparelhos + " aparelho(s)):\n" + linhas.join("\n");
+    enviarWs({ tipo: "estado_push" });
+  },
+  solicitacao_enviada(d) {
+    el("sala-erro").textContent = "";
+    el("sala-info").textContent = "📩 Pedido enviado para " + d.dono + ". Você entra assim que for aceito.";
+  },
+};
+
+function sairDaSala(nome, mensagem) {
+  const s = salas.get(nome);
+  if (s) s.membro = false;
+  delete conversas[chaveSala(nome)];
+  delete naoLidas[chaveSala(nome)];
+  if (selecionado === chaveSala(nome)) selecionar(MURAL, false);
+  if (mensagem) adicionarSistema(mensagem);
+  renderizarLista();
+}
+
+function definirBloqueio(ate) {
+  clearTimeout(timerDesbloqueio);
+  bloqueadoAte = ate ? new Date(ate) : null;
+  if (bloqueadoAte && bloqueadoAte > new Date()) {
+    const ms = bloqueadoAte - new Date();
+    if (ms < 2 ** 31) timerDesbloqueio = setTimeout(() => { definirBloqueio(null); adicionarSistema("✅ Envio liberado."); }, ms + 500);
+  } else {
+    bloqueadoAte = null;
+  }
+  atualizarEntrada();
+}
+
+// ---------------------------------------------------------------
+// Login / logout
+// ---------------------------------------------------------------
+el("modal-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const apelido = el("modal-input").value.trim();
+  const senha = el("modal-senha").value;
+  if (!apelido || !senha) {
+    el("modal-erro").textContent = "Preencha nome e senha.";
+    return;
+  }
+  el("modal-btn").disabled = true;
+  el("modal-erro").textContent = "";
+  try {
+    const resp = await fetch("/api/entrar", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({apelido, senha}),
+    });
+    const dados = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      el("modal-erro").textContent = dados.erro || "Não foi possível entrar.";
+      return;
+    }
+    el("modal-senha").value = "";
+    if (dados.bonus_convite) {
+      setTimeout(() => avisoTela("🎁 Você entrou pelo convite de " + dados.bonus_convite.de + " e ganhou " + dados.bonus_convite.cargas + " cargas ⚡!"), 1500);
+    }
+    conectar();
+  } catch (err) {
+    el("modal-erro").textContent = "Sem conexão com o servidor.";
+  } finally {
+    el("modal-btn").disabled = false;
+  }
+};
+
+el("sair").onclick = async () => {
+  const antigo = ws;
+  ws = null;
+  if (antigo) antigo.close();
+  await cancelarPush();
+  try { await fetch("/api/sair", {method: "POST"}); } catch (e) {}
+  meuNome = ""; meuPapel = 0;
+  conversas = {}; naoLidas = {}; usuarios = new Map(); contatos = new Set(); salas = new Map();
+  selecionado = TELA;
+  definirBloqueio(null);
+  renderizarLista();
+  renderizarConversa();
+  atualizarAviso();
+  mostrarLogin();
+};
+
+// ---------------------------------------------------------------
+// Salas: criar, entrar, solicitar
+// ---------------------------------------------------------------
+function fecharModais() {
+  el("modal-criar").classList.add("escondido");
+  el("modal-sala").classList.add("escondido");
+  el("modal-notif").classList.add("escondido");
+  salaModal = null;
+}
+document.querySelectorAll("[data-fechar]").forEach(b => b.onclick = fecharModais);
+document.querySelectorAll(".modal").forEach(m => m.addEventListener("click", (e) => {
+  if (e.target === m && m.id !== "modal-nome") fecharModais();
+}));
+
+function abrirCriarSala() {
+  el("criar-erro").textContent = "";
+  el("criar-nome").value = ""; el("criar-senha").value = "";
+  el("modal-criar").classList.remove("escondido");
+  el("criar-nome").focus();
+}
+el("criar-form").onsubmit = (e) => {
+  e.preventDefault();
+  const nome = el("criar-nome").value.trim();
+  const senha = el("criar-senha").value;
+  if (!nome || !senha) { el("criar-erro").textContent = "Preencha nome e senha."; return; }
+  el("criar-erro").textContent = "";
+  enviarWs({ tipo: "criar_sala", nome, senha });
+};
+
+function preencherModalSala() {
+  const s = salas.get(salaModal);
+  if (!s) return;
+  el("sala-titulo").textContent = "🔒 " + s.nome;
+  el("sala-dica").textContent = "Criada por " + s.dono + " · " + s.membros + (s.membros === 1 ? " membro" : " membros");
+}
+function abrirSala(nome) {
+  salaModal = nome;
+  preencherModalSala();
+  el("sala-erro").textContent = ""; el("sala-info").textContent = ""; el("sala-senha").value = "";
+  el("modal-sala").classList.remove("escondido");
+}
+el("sala-form").onsubmit = (e) => {
+  e.preventDefault();
+  const senha = el("sala-senha").value;
+  if (!senha) { el("sala-erro").textContent = "Digite a senha."; return; }
+  el("sala-erro").textContent = "";
+  enviarWs({ tipo: "entrar_sala", sala: salaModal, senha });
+};
+el("sala-solicitar").onclick = () => {
+  el("sala-erro").textContent = "";
+  enviarWs({ tipo: "solicitar_sala", sala: salaModal });
+};
+
+el("titulo-acao").onclick = () => {
+  if (!ehSala(selecionado)) return;
+  const nome = nomeDaChave(selecionado);
+  const s = salas.get(nome);
+  if (!s) return;
+  if (s.dono === meuNome) {
+    if (confirm("Apagar a sala " + nome + " e todas as mensagens dela?")) enviarWs({ texto: "/apagarsala " + nome, para: null, sala: null });
+  } else if (confirm("Sair da sala " + nome + "?")) {
+    enviarWs({ texto: "/sairsala " + nome, para: null, sala: null });
+  }
+};
+
+// ---------------------------------------------------------------
+// Utilidades de conversa
+// ---------------------------------------------------------------
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function tocarSom() {
+  try {
+    if (!audioCtx) audioCtx = new AudioCtx();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine"; osc.frequency.value = 880; gain.gain.value = 0.2;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+  } catch (e) {}
+}
+
+function adicionar(chave, m) {
+  if (chave === TELA) { avisoTela(m.texto); return; }
+  empurrar(chave, { remetente: "", hora: "", ...m });
+  if (chave === selecionado) renderizarConversa();
+}
+function adicionarSistema(texto) { adicionar(selecionado, { texto, classe: "sistema" }); }
+
+function renomear(de, para) {
+  if (meuNome === de) { meuNome = para; atualizarNomeTopo(); }
+  if (usuarios.has(de)) { usuarios.set(para, usuarios.get(de)); usuarios.delete(de); }
+  if (contatos.has(de)) { contatos.delete(de); contatos.add(para); }
+  const kDe = chaveUsuario(de), kPara = chaveUsuario(para);
+  if (conversas[kDe]) { conversas[kPara] = (conversas[kPara] || []).concat(conversas[kDe]); delete conversas[kDe]; }
+  if (naoLidas[kDe]) { naoLidas[kPara] = naoLidas[kDe]; delete naoLidas[kDe]; }
+  for (const msgs of Object.values(conversas)) msgs.forEach(m => { if (m.remetente === de) m.remetente = para; });
+  for (const s of salas.values()) if (s.dono === de) s.dono = para;
+  if (selecionado === kDe) selecionar(kPara, false); else { renderizarLista(); renderizarConversa(); atualizarTitulo(); }
+}
+
+function aplicarApagado(d) {
+  if (d.escopo === "mural") conversas[MURAL] = [];
+  else if (d.escopo === "privada") { conversas[chaveUsuario(d.com)] = []; delete naoLidas[chaveUsuario(d.com)]; }
+  else if (d.escopo === "sala") { conversas[chaveSala(d.sala)] = []; delete naoLidas[chaveSala(d.sala)]; }
+  else if (d.escopo === "total") { for (const k of Object.keys(conversas)) conversas[k] = []; naoLidas = {}; }
+  else if (d.escopo === "usuario") {
+    for (const k of Object.keys(conversas)) conversas[k] = conversas[k].filter(m => m.remetente !== d.usuario);
+  }
+  renderizarLista();
+  renderizarConversa();
+}
+
+// Mensagens privadas e de salas expiram: some da tela quando passam do prazo.
+setInterval(() => {
+  const limite = Date.now() - ttlHoras * 3600 * 1000;
+  let mudou = false;
+  for (const k of Object.keys(conversas)) {
+    if (k === MURAL) continue;
+    const antes = conversas[k].length;
+    conversas[k] = conversas[k].filter(m => !m.hora || new Date(m.hora).getTime() > limite);
+    if (conversas[k].length !== antes && k === selecionado) mudou = true;
+  }
+  if (mudou) renderizarConversa();
+}, 60000);
+
+// ---------------------------------------------------------------
+// Barra lateral
+// ---------------------------------------------------------------
+function criarItem(classes, onclick) {
+  const div = document.createElement("div");
+  div.className = "item " + classes;
+  div.onclick = onclick;
+  return div;
+}
+function span(texto, classe) {
+  const s = document.createElement("span");
+  if (classe) s.className = classe;
+  s.textContent = texto;
+  return s;
+}
+function badge(div, chave) {
+  if (naoLidas[chave]) div.appendChild(span(String(naoLidas[chave]), "badge-nao-lidas"));
+}
+function secao(titulo, botao) {
+  const div = document.createElement("div");
+  div.className = "secao";
+  div.appendChild(span(titulo));
+  if (botao) div.appendChild(botao);
+  return div;
+}
+
+function itemUsuario(apelido) {
+  const chave = chaveUsuario(apelido);
+  const div = criarItem(selecionado === chave ? "selecionado" : "", () => selecionar(chave));
+  div.appendChild(span("", "bolinha " + (usuarios.get(apelido) ? "online" : "offline")));
+  div.appendChild(span(apelido, "nome-item"));
+  badge(div, chave);
+  const pino = document.createElement("button");
+  const fixo = contatos.has(apelido);
+  pino.className = "pino" + (fixo ? " fixo" : "");
+  pino.title = fixo ? "Tirar dos contatos" : "Fixar nos contatos";
+  pino.textContent = "📌";
+  pino.onclick = (e) => { e.stopPropagation(); enviarWs({ tipo: "fixar", apelido, fixo: !fixo }); };
+  div.appendChild(pino);
+  return div;
+}
+
+function ordenarPessoas(lista) {
+  return lista.sort((a, b) => {
+    const oa = usuarios.get(a), ob = usuarios.get(b);
+    if (oa !== ob) return oa ? -1 : 1;
+    return a.localeCompare(b);
+  });
+}
+
+function renderizarLista() {
+  const lista = el("lista");
+  const busca = el("busca").value.trim().toLowerCase();
+  const casa = (nome) => !busca || nome.toLowerCase().includes(busca);
+  lista.innerHTML = "";
+
+  const itemTela = criarItem("tela" + (selecionado === TELA ? " selecionado" : ""), () => selecionar(TELA));
+  itemTela.appendChild(span("🎨"));
+  itemTela.appendChild(span("Tela de Pixels", "nome-item"));
+  lista.appendChild(itemTela);
+
+  const itemRanking = criarItem("ranking" + (selecionado === RANKING ? " selecionado" : ""), () => selecionar(RANKING));
+  itemRanking.appendChild(span("🏆"));
+  itemRanking.appendChild(span("Ranking", "nome-item"));
+  lista.appendChild(itemRanking);
+
+  const mural = criarItem("mural" + (selecionado === MURAL ? " selecionado" : ""), () => selecionar(MURAL));
+  mural.appendChild(span("📢"));
+  mural.appendChild(span("Mural de Recados", "nome-item"));
+  lista.appendChild(mural);
+
+  // Salas
+  const btnCriar = document.createElement("button");
+  btnCriar.textContent = "+ Criar";
+  btnCriar.onclick = abrirCriarSala;
+  lista.appendChild(secao("Salas", btnCriar));
+  const listaSalas = [...salas.values()].filter(s => casa(s.nome))
+    .sort((a, b) => (a.membro !== b.membro ? (a.membro ? -1 : 1) : a.nome.localeCompare(b.nome)));
+  if (!listaSalas.length) lista.appendChild(Object.assign(document.createElement("div"), { className: "dica-vazia", textContent: busca ? "Nenhuma sala encontrada." : "Nenhuma sala ainda." }));
+  listaSalas.forEach(s => {
+    const chave = chaveSala(s.nome);
+    const div = criarItem((s.membro ? "" : "fora ") + (selecionado === chave ? "selecionado" : ""),
+      () => s.membro ? selecionar(chave) : abrirSala(s.nome));
+    div.appendChild(span(s.membro ? "💬" : "🔒"));
+    div.appendChild(span(s.nome, "nome-item"));
+    badge(div, chave);
+    div.appendChild(span(String(s.membros), "sub"));
+    lista.appendChild(div);
+  });
+
+  // Contatos (fixados)
+  const outros = [...usuarios.keys()].filter(a => a !== meuNome && casa(a));
+  const fixados = ordenarPessoas(outros.filter(a => contatos.has(a)));
+  lista.appendChild(secao("Contatos"));
+  if (!fixados.length) lista.appendChild(Object.assign(document.createElement("div"), { className: "dica-vazia", textContent: busca ? "Nenhum contato encontrado." : "Toque em 📌 para fixar alguém aqui." }));
+  fixados.forEach(a => lista.appendChild(itemUsuario(a)));
+
+  // Todos
+  const todos = ordenarPessoas(outros.filter(a => !contatos.has(a)));
+  lista.appendChild(secao("Todos (" + todos.length + ")"));
+  todos.slice(0, LIMITE_LISTA).forEach(a => lista.appendChild(itemUsuario(a)));
+  if (todos.length > LIMITE_LISTA) {
+    lista.appendChild(Object.assign(document.createElement("div"), { className: "mais", textContent: "… e mais " + (todos.length - LIMITE_LISTA) + ". Use a busca." }));
+  }
+
+  const totalNaoLidas = Object.values(naoLidas).reduce((a, b) => a + b, 0);
+  el("menu-ponto").classList.toggle("escondido", !totalNaoLidas);
+  try {
+    if (navigator.setAppBadge) totalNaoLidas ? navigator.setAppBadge(totalNaoLidas) : navigator.clearAppBadge();
+  } catch (e) {}
+}
+
+el("busca").addEventListener("input", renderizarLista);
+
+function abrirMenu(abrir) {
+  el("sidebar").classList.toggle("aberto", abrir);
+  el("veu").classList.toggle("aberto", abrir);
+}
+el("menu").onclick = () => abrirMenu(!el("sidebar").classList.contains("aberto"));
+el("veu").onclick = () => abrirMenu(false);
+
+// ---------------------------------------------------------------
+// Conversa aberta
+// ---------------------------------------------------------------
+function selecionar(chave, fecharMenu = true) {
+  selecionado = chave;
+  if (chave === RANKING) enviarWs({ tipo: "ranking", ordem: ordemRanking });
+  delete naoLidas[chave];
+  if (ehPrivada(chave)) enviarWs({ tipo: "marcar_lidas", interlocutor: nomeDaChave(chave) });
+  atualizarTitulo();
+  atualizarEntrada();
+  renderizarLista();
+  renderizarConversa();
+  if (fecharMenu) abrirMenu(false);
+  fecharNotificacoes(chave);
+  if (!el("texto").disabled && window.innerWidth > 700) el("texto").focus();
+}
+
+function atualizarTitulo() {
+  const acao = el("titulo-acao");
+  acao.classList.add("escondido");
+  let nome, sub;
+  if (selecionado === RANKING) {
+    nome = "🏆 Ranking";
+    sub = "Quem mais pinta e quem mais participa da SalaVip";
+  } else if (selecionado === TELA) {
+    nome = "🎨 Tela de Pixels";
+    sub = "Todos pintam juntos · 1 pixel a cada " + (telaInfo ? telaInfo.espera_s : 10) + " segundos";
+  } else if (selecionado === MURAL) {
+    nome = "📢 Mural de Recados";
+    sub = meuPapel >= ADMIN ? "Recados para todos. Só Admins escrevem aqui." : "Recados dos Admins. Só Admins escrevem aqui.";
+  } else if (ehSala(selecionado)) {
+    const s = salas.get(nomeDaChave(selecionado));
+    nome = "💬 " + nomeDaChave(selecionado);
+    sub = (s ? "Dono: " + s.dono + " · " + s.membros + (s.membros === 1 ? " membro" : " membros") + " · " : "") + "⏳ mensagens somem em " + ttlHoras + "h";
+    if (s) {
+      acao.textContent = s.dono === meuNome ? "Apagar sala" : "Sair da sala";
+      acao.classList.remove("escondido");
+    }
+  } else {
+    nome = "👤 " + nomeDaChave(selecionado);
+    sub = "⏳ Mensagens privadas somem após " + ttlHoras + " horas";
+  }
+  el("titulo-nome").textContent = nome;
+  el("titulo-sub").textContent = sub;
+}
+
+function atualizarEntrada() {
+  const input = el("texto");
+  let ativo = conectado();
+  let dica = "Mensagem...";
+  if (selecionado === MURAL) {
+    dica = meuPapel >= ADMIN ? "Recado para todos..." : "📢 Só Admins escrevem aqui";
+  } else if (ehSala(selecionado)) {
+    dica = "Mensagem para a sala " + nomeDaChave(selecionado) + "...";
+  } else {
+    dica = "Mensagem para " + nomeDaChave(selecionado) + "...";
+  }
+  if (ativo && bloqueadoAte) dica = "🚫 Envio travado até " + formatarHora(bloqueadoAte);
+  input.disabled = !ativo;
+  el("enviar").disabled = !ativo;
+  input.placeholder = dica;
+  el("form").classList.toggle("escondido", selecionado === TELA || selecionado === RANKING);
+  atualizarBotoes();
+}
+
+function formatarHora(hora) {
+  const d = new Date(hora);
+  if (isNaN(d)) return "";
+  const hm = d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+  return d.toDateString() === new Date().toDateString() ? hm
+    : d.toLocaleDateString([], {day: "2-digit", month: "2-digit"}) + " " + hm;
+}
+
+function renderizarConversa() {
+  const naTela = selecionado === TELA;
+  el("tela-area").classList.toggle("escondido", !naTela);
+  el("mensagens").classList.toggle("escondido", naTela);
+  if (naTela) { mostrarTela(); return; }
+  const container = el("mensagens");
+  if (selecionado === RANKING) { renderizarRanking(); return; }
+  container.innerHTML = "";
+  const msgs = conversas[selecionado] || [];
+  if (!msgs.length && meuNome) {
+    const vazio = document.createElement("div");
+    vazio.className = "vazio";
+    vazio.textContent = selecionado === MURAL ? "Nenhum recado ainda."
+      : "Nenhuma mensagem. As mensagens aqui somem após " + ttlHoras + " horas.";
+    container.appendChild(vazio);
+  }
+  msgs.forEach(m => {
+    const div = document.createElement("div");
+    div.className = "msg " + m.classe;
+    if (m.remetente && m.classe === "recebida" && selecionado !== chaveUsuario(m.remetente)) {
+      const n = document.createElement("div");
+      n.className = "nome"; n.textContent = m.remetente;
+      div.appendChild(n);
+    }
+    div.appendChild(m.audio ? elementoAudio(m) : Object.assign(document.createElement("div"), { textContent: m.texto }));
+    if (m.hora) {
+      const h = document.createElement("div");
+      h.className = "hora"; h.textContent = formatarHora(m.hora);
+      div.appendChild(h);
+    }
+    container.appendChild(div);
+  });
+  container.scrollTop = container.scrollHeight;
+}
+
+function enviarMensagem() {
+  const input = el("texto");
+  const texto = input.value;
+  if (!texto.trim() || !conectado()) return;
+  if (selecionado === MURAL && meuPapel < ADMIN && !texto.trim().startsWith("/")) {
+    adicionarSistema("📢 Somente Admins podem escrever no Mural de Recados. Converse no privado ou numa sala.");
+    limparTexto();
+    return;
+  }
+  const dados = { texto, para: null, sala: null };
+  if (ehSala(selecionado)) dados.sala = nomeDaChave(selecionado);
+  else if (ehPrivada(selecionado)) dados.para = nomeDaChave(selecionado);
+  enviarWs(dados);
+  limparTexto();
+  atualizarBotoes();
+  input.focus();
+}
+
+// A caixa cresce conforme o texto (até o limite do CSS).
+function ajustarAltura() {
+  const t = el("texto");
+  t.style.height = "auto";
+  t.style.height = Math.max(46, t.scrollHeight + 2) + "px";
+}
+function limparTexto() { el("texto").value = ""; ajustarAltura(); }
+
+// Computador: Enter envia, Shift+Enter pula linha. Celular: Enter pula linha, envia pelo botão.
+const telaDeToque = window.matchMedia("(pointer: coarse)").matches;
+el("enviar").onclick = enviarMensagem;
+el("texto").addEventListener("input", ajustarAltura);
+el("texto").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !telaDeToque && !e.isComposing) {
+    e.preventDefault();
+    enviarMensagem();
+  }
+});
+
+// ---------------------------------------------------------------
+// App instalável (PWA) e notificações (Web Push)
+// ---------------------------------------------------------------
+const pushSuportado = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const ehIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const instalado = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+let promptInstalar = null;
+let conversaPendente = new URLSearchParams(location.search).get("c");
+if (conversaPendente) history.replaceState(null, "", "/");
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data && e.data.tipo === "abrir") abrirChave(e.data.chave);
+  });
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  promptInstalar = e;
+  atualizarAviso();
+});
+window.addEventListener("appinstalled", () => { promptInstalar = null; atualizarAviso(); });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") fecharNotificacoes(selecionado);
+});
+
+function abrirChave(chave) {
+  if (!meuNome) { conversaPendente = chave; return; }
+  const ok = chave === MURAL || chave === TELA || chave === RANKING
+    || (ehPrivada(chave) && usuarios.has(nomeDaChave(chave)))
+    || (ehSala(chave) && salas.get(nomeDaChave(chave))?.membro);
+  selecionar(ok ? chave : MURAL);
+}
+
+async function fecharNotificacoes(chave) {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) (await reg.getNotifications({ tag: chave })).forEach(n => n.close());
+  } catch (e) {}
+}
+
+function chaveParaBytes(b64) {
+  const pad = "=".repeat((4 - b64.length % 4) % 4);
+  const bruto = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(bruto, c => c.charCodeAt(0));
+}
+
+let ultimoErroPush = "";
+let aparelhosNoServidor = null;
+
+async function inscreverPush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const { chave } = await (await fetch("/api/push/chave")).json();
+    if (!chave) throw new Error("servidor sem chave de push");
+    const chaveBytes = chaveParaBytes(chave);
+    let inscricao = await reg.pushManager.getSubscription();
+    // Se o servidor trocou de chave, refaz a inscrição.
+    const atual = inscricao?.options?.applicationServerKey;
+    if (inscricao && atual && new Uint8Array(atual).toString() !== chaveBytes.toString()) {
+      await inscricao.unsubscribe();
+      inscricao = null;
+    }
+    if (!inscricao) inscricao = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chaveBytes });
+    const resp = await fetch("/api/push/inscrever", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(inscricao.toJSON()),
+    });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).erro || "HTTP " + resp.status);
+    ultimoErroPush = "";
+    enviarWs({ tipo: "estado_push" });
+    return true;
+  } catch (e) {
+    ultimoErroPush = String(e && e.message || e);
+    console.warn("push indisponível:", e);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------
+// Painel de notificações (estado + teste)
+// ---------------------------------------------------------------
+async function atualizarPainelNotif() {
+  if (el("modal-notif").classList.contains("escondido")) return;
+  const linhas = [];
+  let inscrito = false, servico = "";
+  if (!pushSuportado) {
+    linhas.push(ehIOS && !instalado
+      ? "❌ No iPhone, notificações só funcionam com o app na Tela de Início (Safari → Compartilhar → Adicionar à Tela de Início)."
+      : "❌ Este navegador não suporta notificações. Use o Chrome.");
+  } else {
+    const perm = Notification.permission;
+    linhas.push(perm === "granted" ? "✅ Permissão do navegador: permitida"
+      : perm === "denied" ? "❌ Permissão do navegador: bloqueada — libere nas configurações do site (veja as dicas)"
+      : "⚠️ Permissão do navegador: ainda não pedida");
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      linhas.push(reg?.active ? "✅ Serviço de notificações do app: ativo" : "❌ Serviço de notificações do app: não carregou (recarregue a página)");
+      const sub = reg && await reg.pushManager.getSubscription();
+      inscrito = !!sub;
+      if (sub) servico = new URL(sub.endpoint).host;
+    } catch (e) {}
+    linhas.push(inscrito ? "✅ Este aparelho está inscrito (" + servico + ")" : "❌ Este aparelho não está inscrito");
+  }
+  if (aparelhosNoServidor !== null) {
+    linhas.push((aparelhosNoServidor ? "✅ " : "❌ ") + "Aparelhos com notificação na sua conta: " + aparelhosNoServidor);
+  }
+  linhas.push(instalado ? "📲 Aberto como app instalado" : "🌐 Aberto no navegador");
+  if (ultimoErroPush) {
+    linhas.push("⚠️ Último erro: " + ultimoErroPush);
+    if (/permission denied|not allowed|denied/i.test(ultimoErroPush)) {
+      linhas.push("👉 O Android está bloqueando as notificações do Chrome. Vá em Configurações → Apps → Chrome → Notificações → Permitir (e o mesmo no app SalaVip, se instalou). Depois toque em “Ativar” de novo.");
+    }
+  }
+  el("notif-estado").textContent = linhas.join("\n");
+  el("notif-estado").style.whiteSpace = "pre-wrap";
+  el("notif-ativar").classList.toggle("escondido", !pushSuportado || (inscrito && Notification.permission === "granted" && aparelhosNoServidor > 0));
+}
+
+function abrirPainelNotif() {
+  el("notif-resultado").textContent = "";
+  el("modal-notif").classList.remove("escondido");
+  abrirMenu(false);
+  enviarWs({ tipo: "estado_push" });
+  atualizarPainelNotif();
+}
+el("abrir-notif").onclick = abrirPainelNotif;
+
+el("notif-ativar").onclick = async () => {
+  if (!pushSuportado) return;
+  const permissao = await Notification.requestPermission();
+  if (permissao !== "granted") {
+    el("notif-resultado").textContent = permissao === "denied"
+      ? "❌ Notificações bloqueadas. Libere nas configurações do navegador/Android (veja as dicas)."
+      : "Você não respondeu ao pedido de permissão.";
+  } else {
+    el("notif-resultado").textContent = (await inscreverPush()) ? "✅ Notificações ativadas neste aparelho." : "❌ Não consegui ativar: " + ultimoErroPush;
+  }
+  atualizarAviso();
+  atualizarPainelNotif();
+};
+
+async function testarNotificacao(atraso) {
+  const linhas = [];
+  if (pushSuportado && Notification.permission === "granted" && !atraso) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification("🔔 Teste local do SalaVip", {
+        body: "Esta foi criada pelo próprio aparelho.", tag: "teste-local",
+        icon: "/icones/icone-192.png", badge: "/icones/badge-96.png",
+      });
+      linhas.push("✅ Teste local enviado (deve aparecer uma notificação agora).");
+    } catch (e) {
+      linhas.push("❌ O aparelho não deixou mostrar notificação: " + e.message);
+    }
+  }
+  linhas.push(atraso ? "⏳ Em " + atraso + " s o servidor manda o teste. Feche o app ou bloqueie a tela agora."
+    : "⏳ Pedindo ao servidor para enviar um push...");
+  el("notif-resultado").textContent = linhas.join("\n");
+  enviarWs({ tipo: "testar_push", atraso });
+}
+el("notif-testar").onclick = () => testarNotificacao(0);
+el("notif-testar-atraso").onclick = () => testarNotificacao(15);
+
+async function cancelarPush() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const inscricao = reg && await reg.pushManager.getSubscription();
+    if (inscricao) {
+      await fetch("/api/push/cancelar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: inscricao.endpoint }),
+      });
+    }
+  } catch (e) {}
+}
+
+function avisoDispensado() {
+  try { return localStorage.getItem("chat_aviso_app") === "fechado"; } catch (e) { return false; }
+}
+
+function atualizarAviso() {
+  const precisaNotif = pushSuportado && Notification.permission === "default";
+  const dicaIOS = ehIOS && !instalado && !pushSuportado;
+  const podeInstalar = !!promptInstalar;
+  let texto = "";
+  if (precisaNotif) texto = "🔔 Receba um aviso quando chegar mensagem, mesmo com o chat fechado.";
+  else if (dicaIOS) texto = "📲 No iPhone, toque em Compartilhar ⬆️ e depois em “Adicionar à Tela de Início” para instalar o app e receber notificações.";
+  else if (podeInstalar) texto = "📲 Instale o chat como app no seu aparelho.";
+  const mostrar = !!meuNome && !!texto && !avisoDispensado();
+  el("aviso-app").classList.toggle("escondido", !mostrar);
+  el("aviso-texto").textContent = texto;
+  el("btn-notif").classList.toggle("escondido", !precisaNotif);
+  el("btn-instalar").classList.toggle("escondido", !podeInstalar);
+}
+
+el("btn-notif").onclick = async () => {
+  const permissao = await Notification.requestPermission();
+  if (permissao === "granted") {
+    await inscreverPush();
+    adicionarSistema("🔔 Notificações ativadas neste aparelho.");
+  } else if (permissao === "denied") {
+    adicionarSistema("🔕 Notificações bloqueadas. Para ativar, libere nas configurações do navegador para este site.");
+  }
+  atualizarAviso();
+};
+el("btn-instalar").onclick = async () => {
+  if (!promptInstalar) return;
+  promptInstalar.prompt();
+  await promptInstalar.userChoice.catch(() => {});
+  promptInstalar = null;
+  atualizarAviso();
+};
+el("aviso-fechar").onclick = () => {
+  try { localStorage.setItem("chat_aviso_app", "fechado"); } catch (e) {}
+  atualizarAviso();
+};
+
+// ---------------------------------------------------------------
+// Áudio: segure 🎤 para gravar (até 10 s), solte para enviar
+// ---------------------------------------------------------------
+const MAX_AUDIO_MS = 10000;
+const gravacaoSuportada = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+let gravacao = null;      // { recorder, stream, partes, inicio, timer, cancelada, xInicial, ativa }
+let tocando = null;       // { id, audio, url }
+const cacheAudios = new Map();  // id -> URL (só áudios do Mural, que podem tocar de novo)
+
+function audioPermitidoAqui() {
+  return gravacaoSuportada && conectado() && (ehPrivada(selecionado) || (selecionado === MURAL && meuPapel >= ADMIN));
+}
+
+function atualizarBotoes() {
+  const temTexto = el("texto").value.trim().length > 0;
+  const mic = !temTexto && (audioPermitidoAqui() || gravacao);
+  el("microfone").classList.toggle("escondido", !mic);
+  el("enviar").classList.toggle("escondido", mic);
+}
+el("texto").addEventListener("input", atualizarBotoes);
+
+function tipoGravacao() {
+  for (const t of ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"]) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return "";
+}
+
+function mostrarGravacao(sim) {
+  el("gravando").classList.toggle("escondido", !sim);
+  el("texto").classList.toggle("escondido", sim);
+  el("microfone").classList.toggle("gravando", sim);
+  el("gravando").classList.remove("cancelar");
+  el("rec-dica").textContent = "◀ deslize para cancelar";
+}
+
+async function iniciarGravacao(e) {
+  if (gravacao || !audioPermitidoAqui()) return;
+  e.preventDefault();
+  try { el("microfone").setPointerCapture(e.pointerId); } catch (err) {}
+  const destino = selecionado;
+  gravacao = { partes: [], xInicial: e.clientX, soltou: false, destino };
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) {
+    gravacao = null;
+    adicionarSistema("🎤 Sem acesso ao microfone. Permita o microfone para este site nas configurações do navegador.");
+    atualizarBotoes();
+    return;
+  }
+  if (!gravacao || gravacao.soltou) {   // soltou enquanto o navegador pedia permissão
+    stream.getTracks().forEach(t => t.stop());
+    gravacao = null;
+    adicionarSistema("🎤 Microfone liberado. Agora segure o botão para gravar.");
+    atualizarBotoes();
+    return;
+  }
+  const tipo = tipoGravacao();
+  const recorder = new MediaRecorder(stream, { ...(tipo ? { mimeType: tipo } : {}), audioBitsPerSecond: 32000 });
+  Object.assign(gravacao, { recorder, stream, inicio: Date.now(), ativa: true });
+  recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) gravacao && gravacao.partes.push(ev.data); };
+  recorder.start(250);
+  try { navigator.vibrate && navigator.vibrate(30); } catch (err) {}
+  mostrarGravacao(true);
+  gravacao.timer = setInterval(() => {
+    if (!gravacao) return;
+    const ms = Date.now() - gravacao.inicio;
+    const seg = Math.min(10, Math.floor(ms / 1000));
+    el("rec-tempo").textContent = "0:" + String(seg).padStart(2, "0");
+    el("rec-barra").style.width = Math.min(100, ms / MAX_AUDIO_MS * 100) + "%";
+    if (ms >= MAX_AUDIO_MS) finalizarGravacao(true);
+  }, 100);
+}
+
+function moverGravacao(e) {
+  if (!gravacao || !gravacao.ativa) return;
+  const cancelar = gravacao.xInicial - e.clientX > 80;
+  gravacao.cancelada = cancelar;
+  el("gravando").classList.toggle("cancelar", cancelar);
+  el("rec-dica").textContent = cancelar ? "solte para cancelar" : "◀ deslize para cancelar";
+}
+
+function finalizarGravacao(enviar) {
+  if (!gravacao) return;
+  if (!gravacao.ativa) { gravacao.soltou = true; return; }
+  const g = gravacao;
+  gravacao = null;
+  clearInterval(g.timer);
+  mostrarGravacao(false);
+  const duracao = Math.min(MAX_AUDIO_MS, Date.now() - g.inicio);
+  g.recorder.onstop = () => {
+    g.stream.getTracks().forEach(t => t.stop());
+    atualizarBotoes();
+    if (!enviar || g.cancelada) return;
+    if (duracao < 500) { adicionarSistema("🎤 Segure o botão enquanto fala; solte para enviar."); return; }
+    const blob = new Blob(g.partes, { type: g.recorder.mimeType || "audio/webm" });
+    enviarAudio(blob, duracao, g.destino);
+  };
+  try { g.recorder.stop(); } catch (err) {}
+}
+
+async function enviarAudio(blob, duracao, destino) {
+  const q = new URLSearchParams({ duracao: String(duracao) });
+  if (ehPrivada(destino)) q.set("para", nomeDaChave(destino));
+  try {
+    const resp = await fetch("/api/audio?" + q, { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+    if (!resp.ok) {
+      const erro = (await resp.json().catch(() => ({}))).erro || "Não foi possível enviar o áudio.";
+      adicionar(destino, { texto: "🎤 " + erro, classe: "sistema" });
+    }
+  } catch (err) {
+    adicionar(destino, { texto: "🎤 Sem conexão: o áudio não foi enviado.", classe: "sistema" });
+  }
+}
+
+const mic = el("microfone");
+mic.addEventListener("pointerdown", iniciarGravacao);
+mic.addEventListener("pointermove", moverGravacao);
+mic.addEventListener("pointerup", () => finalizarGravacao(true));
+mic.addEventListener("pointercancel", () => finalizarGravacao(false));
+mic.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// --- Tocar ---
+function duracaoTexto(ms) { return "0:" + String(Math.max(1, Math.round((ms || 0) / 1000))).padStart(2, "0"); }
+
+function elementoAudio(m) {
+  const a = m.audio;
+  const box = document.createElement("div");
+  box.className = "audio-msg";
+  const estado = (t) => box.appendChild(Object.assign(document.createElement("span"), { className: "audio-estado", textContent: t }));
+  const tocandoEste = tocando && tocando.id === a.id;
+  if (a.unico && m.classe === "enviada") {
+    estado("🎤 Áudio " + duracaoTexto(a.duracao_ms) + " · " + (a.ouvido ? "✓✓ ouvido" : "✓ enviado (ouvir uma vez)"));
+    return box;
+  }
+  if (a.unico && a.ouvido && !tocandoEste) {
+    estado("🎧 Áudio ouvido");
+    return box;
+  }
+  const botao = document.createElement("button");
+  botao.className = "btn-audio";
+  botao.textContent = tocandoEste ? "⏸ Parar" : "▶ Ouvir " + duracaoTexto(a.duracao_ms);
+  botao.onclick = () => tocandoEste ? pararAudio() : tocarAudio(a);
+  box.appendChild(botao);
+  if (a.unico) estado(tocandoEste ? "🔊 ouvindo… (uma vez)" : "👁 ouvir uma vez");
+  return box;
+}
+
+function pararAudio() {
+  if (!tocando) return;
+  tocando.audio.pause();
+  const t = tocando;
+  tocando = null;
+  if (t.unico) URL.revokeObjectURL(t.url);
+  renderizarConversa();
+}
+
+async function tocarAudio(a) {
+  pararAudio();
+  let url = cacheAudios.get(a.id);
+  if (!url) {
+    const resp = await fetch("/api/audio/" + encodeURIComponent(a.id));
+    if (!resp.ok) {
+      const erro = (await resp.json().catch(() => ({}))).erro || "Áudio indisponível.";
+      if (resp.status === 410) a.ouvido = true;
+      adicionarSistema("🎤 " + erro);
+      renderizarConversa();
+      return;
+    }
+    url = URL.createObjectURL(await resp.blob());
+    if (!a.unico) cacheAudios.set(a.id, url);
+  }
+  if (a.unico) a.ouvido = true;   // já foi apagado no servidor; esta é a única vez
+  const audio = new Audio(url);
+  tocando = { id: a.id, audio, url, unico: a.unico };
+  audio.onended = () => { if (tocando && tocando.audio === audio) pararAudio(); };
+  renderizarConversa();
+  try { await audio.play(); } catch (err) { adicionarSistema("🎤 Não consegui tocar o áudio neste aparelho."); pararAudio(); }
+}
+
+// ---------------------------------------------------------------
+// Tela de Pixels
+// ---------------------------------------------------------------
+let telaInfo = null;          // { largura, altura, paleta, espera_s }
+let telaPixels = null;        // Uint8Array com o índice da cor de cada pixel
+let telaCarregando = false;
+let telaFila = [];            // lotes que chegaram enquanto a imagem carregava
+let corEscolhida = 3;
+let pixelEscolhido = null;    // { x, y }
+let esperaAte = 0;            // Date.now() em que o usuário pode pintar de novo
+let timerEspera = null;
+const vista = { escala: 1, ox: 0, oy: 0, ajustada: false };
+const canvas = el("tela-canvas");
+const ctxTela = canvas.getContext("2d");
+
+function iniciarTela(info) {
+  telaInfo = info;
+  canvas.width = info.largura; canvas.height = info.altura;
+  const paleta = el("tela-paleta");
+  paleta.innerHTML = "";
+  info.paleta.forEach((cor, i) => {
+    const b = document.createElement("button");
+    b.className = "cor" + (i === corEscolhida ? " ativa" : "");
+    b.style.background = cor;
+    b.title = cor;
+    b.setAttribute("aria-label", "Cor " + (i + 1));
+    b.onclick = () => { corEscolhida = i; document.querySelectorAll(".cor").forEach((c, j) => c.classList.toggle("ativa", j === i)); desenharMira(); };
+    paleta.appendChild(b);
+  });
+  definirEsperaTela(info.espera_restante);
+  carregarTela();
+  atualizarRecadoTela();
+  atualizarTitulo();
+}
+
+async function carregarTela() {
+  if (telaCarregando) return;
+  telaCarregando = true;
+  telaFila = [];
+  try {
+    const resp = await fetch("/api/tela", { cache: "no-store" });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    telaPixels = new Uint8Array(await resp.arrayBuffer());
+    desenharTudo();
+    const fila = telaFila; telaFila = [];
+    fila.forEach(aplicarPixels);
+    el("tela-carregando").classList.add("escondido");
+  } catch (e) {
+    el("tela-carregando").textContent = "Não consegui carregar a tela. Tentando de novo...";
+    setTimeout(() => { telaCarregando = false; carregarTela(); }, 3000);
+    return;
+  }
+  telaCarregando = false;
+}
+
+function corRgb(hex) { return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]; }
+
+function desenharTudo() {
+  const { largura, altura, paleta } = telaInfo;
+  const rgb = paleta.map(corRgb);
+  const img = ctxTela.createImageData(largura, altura);
+  for (let i = 0; i < telaPixels.length; i++) {
+    const c = rgb[telaPixels[i]] || rgb[0];
+    img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
+  }
+  ctxTela.putImageData(img, 0, 0);
+}
+
+function aplicarPixels(lote) {
+  if (!telaPixels || telaCarregando) { telaFila.push(lote); return; }
+  for (const [x, y, c] of lote) {
+    telaPixels[y * telaInfo.largura + x] = c;
+    ctxTela.fillStyle = telaInfo.paleta[c];
+    ctxTela.fillRect(x, y, 1, 1);
+  }
+  if (pixelEscolhido && lote.some(([x, y]) => x === pixelEscolhido.x && y === pixelEscolhido.y)) {
+    enviarWs({ tipo: "pixel_info", x: pixelEscolhido.x, y: pixelEscolhido.y });
+  }
+}
+
+// --- enquadramento: arrastar, pinça, roda do mouse ---
+function tamanhoVista() { const r = el("tela-viewport").getBoundingClientRect(); return { w: r.width, h: r.height }; }
+
+function limitarVista() {
+  if (!telaInfo) return;
+  const { w, h } = tamanhoVista();
+  const cw = telaInfo.largura * vista.escala, ch = telaInfo.altura * vista.escala;
+  vista.ox = cw <= w ? (w - cw) / 2 : Math.min(0, Math.max(w - cw, vista.ox));
+  vista.oy = ch <= h ? (h - ch) / 2 : Math.min(0, Math.max(h - ch, vista.oy));
+}
+
+function aplicarVista() {
+  limitarVista();
+  canvas.style.transform = `translate(${vista.ox}px, ${vista.oy}px) scale(${vista.escala})`;
+  desenharMira();
+}
+
+function escalaAjustada() {
+  const { w, h } = tamanhoVista();
+  return Math.max(0.1, Math.min(w / telaInfo.largura, h / telaInfo.altura));
+}
+
+function ajustarTela() {
+  if (!telaInfo) return;
+  vista.escala = escalaAjustada();
+  vista.ajustada = true;
+  aplicarVista();
+}
+
+function zoomEm(fator, cx, cy) {
+  const minimo = escalaAjustada(), maximo = 48;
+  const nova = Math.min(maximo, Math.max(minimo, vista.escala * fator));
+  vista.ox = cx - (cx - vista.ox) * (nova / vista.escala);
+  vista.oy = cy - (cy - vista.oy) * (nova / vista.escala);
+  vista.escala = nova;
+  aplicarVista();
+}
+
+function mostrarTela() {
+  requestAnimationFrame(() => { if (!vista.ajustada) ajustarTela(); else aplicarVista(); });
+}
+window.addEventListener("resize", () => { if (selecionado === TELA) { vista.ajustada = false; mostrarTela(); } });
+
+const vp = el("tela-viewport");
+const toques = new Map();
+let gesto = null;
+
+vp.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("#tela-zoom")) return;
+  vp.setPointerCapture(e.pointerId);
+  toques.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const r = vp.getBoundingClientRect();
+  if (toques.size === 1) {
+    gesto = { tipo: "arrastar", x: e.clientX, y: e.clientY, ox: vista.ox, oy: vista.oy, moveu: false };
+  } else if (toques.size === 2) {
+    const [a, b] = [...toques.values()];
+    gesto = { tipo: "pinca", dist: Math.hypot(a.x - b.x, a.y - b.y), escala: vista.escala,
+              cx: (a.x + b.x) / 2 - r.left, cy: (a.y + b.y) / 2 - r.top, ox: vista.ox, oy: vista.oy };
+  }
+});
+vp.addEventListener("pointermove", (e) => {
+  if (!toques.has(e.pointerId) || !gesto) return;
+  toques.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gesto.tipo === "arrastar" && toques.size === 1) {
+    const dx = e.clientX - gesto.x, dy = e.clientY - gesto.y;
+    if (Math.abs(dx) + Math.abs(dy) > 6) gesto.moveu = true;
+    if (gesto.moveu) { vista.ox = gesto.ox + dx; vista.oy = gesto.oy + dy; aplicarVista(); }
+  } else if (gesto.tipo === "pinca" && toques.size === 2) {
+    const [a, b] = [...toques.values()];
+    const minimo = escalaAjustada();
+    const nova = Math.min(48, Math.max(minimo, gesto.escala * Math.hypot(a.x - b.x, a.y - b.y) / gesto.dist));
+    vista.ox = gesto.cx - (gesto.cx - gesto.ox) * (nova / gesto.escala);
+    vista.oy = gesto.cy - (gesto.cy - gesto.oy) * (nova / gesto.escala);
+    vista.escala = nova;
+    aplicarVista();
+  }
+});
+function fimToque(e) {
+  if (!toques.has(e.pointerId)) return;
+  toques.delete(e.pointerId);
+  if (gesto && gesto.tipo === "arrastar" && !gesto.moveu && e.type === "pointerup") escolherPixelNaTela(e.clientX, e.clientY);
+  gesto = toques.size === 1 ? { tipo: "arrastar", ...[...toques.values()][0], ox: vista.ox, oy: vista.oy, moveu: true } : null;
+}
+vp.addEventListener("pointerup", fimToque);
+vp.addEventListener("pointercancel", fimToque);
+vp.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = vp.getBoundingClientRect();
+  zoomEm(e.deltaY < 0 ? 1.25 : 0.8, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+el("zoom-mais").onclick = () => { const { w, h } = tamanhoVista(); zoomEm(1.6, w / 2, h / 2); };
+el("zoom-menos").onclick = () => { const { w, h } = tamanhoVista(); zoomEm(1 / 1.6, w / 2, h / 2); };
+el("zoom-ajustar").onclick = ajustarTela;
+
+// --- escolher e pintar ---
+function escolherPixelNaTela(cx, cy) {
+  if (!telaInfo) return;
+  const r = vp.getBoundingClientRect();
+  const x = Math.floor((cx - r.left - vista.ox) / vista.escala);
+  const y = Math.floor((cy - r.top - vista.oy) / vista.escala);
+  if (x < 0 || y < 0 || x >= telaInfo.largura || y >= telaInfo.altura) return;
+  pixelEscolhido = { x, y };
+  // pixel muito pequeno na tela: aproxima para facilitar
+  if (vista.escala < 6) zoomEm(8 / vista.escala, cx - r.left, cy - r.top);
+  desenharMira();
+  el("tela-info").textContent = "Pixel " + x + ", " + y + " · carregando...";
+  enviarWs({ tipo: "pixel_info", x, y });
+  atualizarBotaoPintar();
+}
+
+function desenharMira() {
+  const mira = el("tela-mira");
+  if (!pixelEscolhido || !telaInfo) { mira.style.display = "none"; return; }
+  const t = Math.max(vista.escala, 4);
+  mira.style.display = "block";
+  mira.style.width = mira.style.height = t + "px";
+  mira.style.left = (vista.ox + pixelEscolhido.x * vista.escala - (t - vista.escala) / 2) + "px";
+  mira.style.top = (vista.oy + pixelEscolhido.y * vista.escala - (t - vista.escala) / 2) + "px";
+  mira.style.background = telaInfo.paleta[corEscolhida] + "cc";
+}
+
+function tempoRelativo(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return "agora há pouco";
+  if (s < 3600) return "há " + Math.floor(s / 60) + " min";
+  if (s < 86400) return "há " + Math.floor(s / 3600) + " h";
+  return "há " + Math.floor(s / 86400) + " dias";
+}
+
+function mostrarInfoPixel(d) {
+  if (!pixelEscolhido || d.x !== pixelEscolhido.x || d.y !== pixelEscolhido.y) return;
+  el("tela-info").textContent = "Pixel " + d.x + ", " + d.y + " · " +
+    (d.apelido ? "pintado por " + d.apelido + " " + tempoRelativo(d.quando) : "ainda não pintado por ninguém");
+}
+
+function avisoTela(texto) {
+  el("tela-info").textContent = texto;
+}
+
+function definirEsperaTela(segundos) {
+  esperaAte = Date.now() + Math.max(0, segundos || 0) * 1000;
+  clearInterval(timerEspera);
+  timerEspera = setInterval(atualizarBotaoPintar, 250);
+  atualizarBotaoPintar();
+}
+
+function atualizarBotaoPintar() {
+  const b = el("tela-pintar");
+  const falta = Math.ceil((esperaAte - Date.now()) / 1000);
+  if (falta > 0 && cargas > 0) {
+    // Na espera, mas com carga: pinta na hora gastando 1 carga.
+    b.disabled = !pixelEscolhido || !conectado() || !telaPixels;
+    b.textContent = pixelEscolhido ? "⚡ Pintar" : "⏳ " + falta + "s";
+    return;
+  }
+  if (falta > 0) {
+    b.disabled = true;
+    b.textContent = "⏳ " + falta + "s";
+    return;
+  }
+  clearInterval(timerEspera);
+  b.disabled = !pixelEscolhido || !conectado() || !telaPixels;
+  b.textContent = pixelEscolhido ? "Pintar" : "Escolha";
+}
+
+el("tela-pintar").onclick = () => {
+  if (!pixelEscolhido) return;
+  const naEspera = Date.now() < esperaAte;
+  if (naEspera && cargas <= 0) return;
+  const { x, y } = pixelEscolhido;
+  if (telaPixels[y * telaInfo.largura + x] === corEscolhida) { avisoTela("Esse pixel já está com essa cor. Escolha outra cor."); return; }
+  enviarWs({ tipo: "pixel", x, y, cor: corEscolhida });
+  if (!naEspera) definirEsperaTela(telaInfo.espera_s);   // o servidor confirma ou corrige
+};
+
+function atualizarRecadoTela() {
+  const faixa = el("tela-recado");
+  const recados = conversas[MURAL] || [];
+  const ultimo = [...recados].reverse().find(m => m.remetente && m.classe !== "sistema");
+  if (!ultimo) { faixa.classList.add("escondido"); return; }
+  faixa.textContent = "📢 " + ultimo.remetente + ": " + (ultimo.audio ? "🎤 Áudio" : ultimo.texto.replace(/\s+/g, " "));
+  faixa.classList.remove("escondido");
+}
+el("tela-recado").onclick = () => selecionar(MURAL);
+
+// ---------------------------------------------------------------
+// Cargas, convites e ranking
+// ---------------------------------------------------------------
+let cargas = 0;
+let ordemRanking = "pixels";
+let ultimoRanking = null;
+let dadosConvite = null;
+
+function definirCargas(n) {
+  cargas = Math.max(0, n | 0);
+  el("tela-cargas").textContent = "⚡ " + cargas;
+  atualizarBotaoPintar();
+}
+
+// Veio por um link de convite? Mostra no login e limpa o endereço.
+const convidadoPor = document.body.dataset.convite || "";
+if (location.pathname.startsWith("/c/")) history.replaceState(null, "", "/" + location.search);
+if (convidadoPor) {
+  document.querySelector("#modal-nome .dica").textContent =
+    "🎁 " + convidadoPor + " te convidou! Crie sua conta (escolha um nome e uma senha) e ganhe cargas de pixel ⚡ para pintar sem esperar.";
+}
+
+function abrirConvite() {
+  el("convite-status").textContent = "";
+  el("convite-previa").src = "/api/tela.png?t=" + Date.now();
+  el("modal-convite").classList.remove("escondido");
+  abrirMenu(false);
+  enviarWs({ tipo: "convite" });
+}
+el("btn-convidar").onclick = abrirConvite;
+el("btn-ranking").onclick = () => selecionar(RANKING);
+
+function linkConvite() {
+  // ?t= muda a cada envio: o WhatsApp busca a prévia de novo e mostra a tela atual.
+  return dadosConvite ? dadosConvite.link + "?t=" + Math.floor(Date.now() / 60000) : "";
+}
+function textoConvite() {
+  return "🎨 Tô pintando na SalaVip! Entra pelo meu link e ganha " + (dadosConvite ? dadosConvite.bonus : 15) +
+    " cargas de pixel pra pintar sem esperar 👇\n" + linkConvite();
+}
+
+function mostrarConvite(d) {
+  dadosConvite = d;
+  el("cv-bonus").textContent = d.bonus;
+  el("cv-minimo").textContent = d.minimo;
+  el("cv-recompensa").textContent = d.recompensa;
+  el("convite-link").value = linkConvite();
+  el("convite-status").textContent = "Amigos que já contaram: " + d.ativos + (d.pendentes ? " · esperando pintar: " + d.pendentes : "");
+}
+
+document.querySelectorAll("#modal-convite [data-fechar]").forEach(b => b.onclick = () => el("modal-convite").classList.add("escondido"));
+el("modal-convite").addEventListener("click", (e) => { if (e.target === el("modal-convite")) el("modal-convite").classList.add("escondido"); });
+
+el("convite-compartilhar").onclick = async () => {
+  if (!dadosConvite) return;
+  const texto = textoConvite();
+  try {
+    const blob = await (await fetch("/api/tela.png?t=" + Date.now())).blob();
+    const arquivo = new File([blob], "salavip-tela.png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+      await navigator.share({ files: [arquivo], text: texto, title: "SalaVip" });
+      return;
+    }
+    if (navigator.share) { await navigator.share({ text: texto, title: "SalaVip" }); return; }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;   // a pessoa cancelou
+  }
+  copiarConvite();
+};
+el("convite-whatsapp").onclick = () => {
+  if (dadosConvite) window.open("https://wa.me/?text=" + encodeURIComponent(textoConvite()), "_blank", "noopener");
+};
+async function copiarConvite() {
+  if (!dadosConvite) return;
+  try { await navigator.clipboard.writeText(textoConvite()); el("convite-status").textContent = "✅ Link copiado! Cole no WhatsApp, Instagram ou onde quiser."; }
+  catch (e) { el("convite-link").select(); el("convite-status").textContent = "Selecione e copie o link acima."; }
+}
+el("convite-copiar").onclick = copiarConvite;
+
+function formatarTempo(seg) {
+  const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60);
+  return h ? h + "h " + m + "min" : m + "min";
+}
+
+function mostrarRanking(d) {
+  ultimoRanking = d;
+  if (selecionado === RANKING) renderizarRanking();
+}
+
+function renderizarRanking() {
+  const c = el("mensagens");
+  c.innerHTML = "";
+  const abas = document.createElement("div");
+  abas.id = "ranking-abas";
+  [["pixels", "🎨 Mais pixels"], ["tempo", "⏱️ Mais tempo"]].forEach(([ordem, rotulo]) => {
+    const b = document.createElement("button");
+    b.textContent = rotulo;
+    b.className = ordemRanking === ordem ? "ativa" : "";
+    b.onclick = () => { ordemRanking = ordem; ultimoRanking = null; renderizarRanking(); enviarWs({ tipo: "ranking", ordem }); };
+    abas.appendChild(b);
+  });
+  c.appendChild(abas);
+  const d = ultimoRanking;
+  if (!d || d.ordem !== ordemRanking) {
+    c.appendChild(Object.assign(document.createElement("div"), { className: "vazio", textContent: "Carregando..." }));
+    return;
+  }
+  const medalha = (i) => ["🥇", "🥈", "🥉"][i] || String(i + 1);
+  const linha = (pos, apelido, pixels, segundos, eu) => {
+    const div = document.createElement("div");
+    div.className = "rank" + (eu ? " eu" : "");
+    div.appendChild(span(pos, "pos"));
+    div.appendChild(span(apelido + (eu ? " (você)" : ""), "quem"));
+    const principal = ordemRanking === "tempo" ? formatarTempo(segundos) : pixels + " px";
+    const outro = ordemRanking === "tempo" ? pixels + " px" : formatarTempo(segundos);
+    div.appendChild(span(outro, "sub2"));
+    div.appendChild(span(principal, "valor"));
+    return div;
+  };
+  if (!d.lista.length) c.appendChild(Object.assign(document.createElement("div"), { className: "vazio", textContent: "Ninguém pontuou ainda. Seja o primeiro! 🎨" }));
+  d.lista.forEach((r, i) => c.appendChild(linha(medalha(i), r.apelido, r.pixels, r.segundos, r.apelido === meuNome)));
+  if (d.eu && !d.lista.some(r => r.apelido === meuNome)) {
+    c.appendChild(Object.assign(document.createElement("div"), { className: "vazio", textContent: "···" }));
+    c.appendChild(linha(String(d.eu.posicao), meuNome, d.eu.pixels, d.eu.segundos, true));
+  }
+  const dica = Object.assign(document.createElement("div"), { className: "vazio",
+    textContent: "Pinte mais e convide amigos: cada amigo ativo te dá cargas ⚡ para pintar sem esperar." });
+  c.appendChild(dica);
+}
+
+renderizarLista();
+conectar();
+</script>
+</body>
+</html>

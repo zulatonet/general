@@ -1,0 +1,7 @@
+*
+!requirements.txt
+!chat.py
+!db.py
+!webpush.py
+!tela.py
+!static/
