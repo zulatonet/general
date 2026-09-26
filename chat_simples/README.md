@@ -269,6 +269,7 @@ comandos que a pessoa pode usar.
 | `/remover Sala Nome` | Dono da sala ou Admin | Tira Nome da sala |
 | `/sairsala Sala` | Membro | Sai da sala (também pelo botão "Sair da sala") |
 | `/apagarsala Sala` | Dono da sala ou Admin | Apaga a sala e as mensagens dela |
+| `/transferir Sala Nome` | Dono da sala ou Admin | Passa a sala para Nome (que entra, se não for membro); o antigo dono continua membro. Respeita o limite de 5 salas por pessoa |
 | `/apagar` (dentro da sala) | Dono da sala ou Admin | Apaga as mensagens da sala |
 | `/help` | Todos | Lista os comandos disponíveis para você |
 | `/admin SENHA` | Qualquer um (com a senha) | Vira Master, se ainda não houver um |

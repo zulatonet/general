@@ -459,6 +459,16 @@ async def apagar_sala(sala_id):
     await pool.execute("DELETE FROM salas WHERE id = $1", sala_id)
 
 
+async def transferir_sala(sala_id, novo_dono_id):
+    """Passa a sala para outro usuário (que vira membro, se ainda não for)."""
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute("UPDATE salas SET dono_id = $2 WHERE id = $1", sala_id, novo_dono_id)
+        await conn.execute(
+            "INSERT INTO sala_membros (sala_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            sala_id, novo_dono_id,
+        )
+
+
 # ---------------------------------------------------------------
 # Mensagens
 # ---------------------------------------------------------------

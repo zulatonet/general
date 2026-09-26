@@ -95,6 +95,9 @@ HELP_USUARIO = """📖 Comandos:
 /sairsala Sala
   Sai de uma sala em que você está.
 
+/transferir Sala Nome
+  Passa a sua sala para Nome (você continua como membro).
+
 /apagarsala Sala
   Apaga sua sala e todas as mensagens dela.
 
@@ -134,6 +137,9 @@ HELP_ADMIN = HELP_USUARIO + """
 
 /apagarsala Sala
   Apaga qualquer sala.
+
+/transferir Sala Nome
+  Passa qualquer sala para Nome.
 
 Admins não podem usar /nome, /senha, /liberar ou /apagar Usuario
 contra o Master ou outros Admins."""
@@ -1295,7 +1301,7 @@ async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
     meu_papel = await db.papel(usuario_id)
 
     # Comandos de sala: valem para qualquer um (dono da sala; admins onde indicado)
-    if cmd in ("/aceitar", "/remover", "/sairsala", "/apagarsala") or (cmd == "/apagar" and len(partes) == 1 and nome_sala):
+    if cmd in ("/aceitar", "/remover", "/sairsala", "/apagarsala", "/transferir") or (cmd == "/apagar" and len(partes) == 1 and nome_sala):
         await comando_sala(ok, usuario_id, meu_papel, cmd, partes, destino, nome_sala)
         return
 
@@ -1519,7 +1525,7 @@ async def comando_sala(ok, usuario_id, meu_papel, cmd, partes, destino, nome_sal
         return
 
     if len(partes) < 2:
-        await ok(f"Uso: {cmd} Sala" + (" Nome" if cmd in ("/aceitar", "/remover") else ""))
+        await ok(f"Uso: {cmd} Sala" + (" Nome" if cmd in ("/aceitar", "/remover", "/transferir") else ""))
         return
     sala = await db.buscar_sala(partes[1])
     if not sala:
@@ -1569,7 +1575,8 @@ async def comando_sala(ok, usuario_id, meu_papel, cmd, partes, destino, nome_sal
 
     elif cmd == "/sairsala":
         if dono:
-            await ok("Você é o dono. Para encerrar a sala use /apagarsala " + sala["nome"])
+            await ok(f"Você é o dono. Para sair, passe a sala para alguém com /transferir {sala['nome']} Nome "
+                     f"ou apague com /apagarsala {sala['nome']}")
             return
         if not await db.remover_membro(sala["id"], usuario_id):
             await ok(f"Você não está na sala {sala['nome']}.")
@@ -1577,6 +1584,36 @@ async def comando_sala(ok, usuario_id, meu_papel, cmd, partes, destino, nome_sal
         await enviar_para_usuario(usuario_id, {"tipo": "sala_saiu", "nome": sala["nome"], "mensagem": f"Você saiu da sala {sala['nome']}."})
         await avisar_sala(sala["id"], sala["nome"], f"{eu} saiu da sala.")
         await anunciar_sala(sala["nome"])
+
+    elif cmd == "/transferir":
+        if not dono and meu_papel < db.ADMIN:
+            await ok("Só quem é dono da sala pode transferi-la.")
+            return
+        if len(partes) < 3:
+            await ok(f"Uso: /transferir {sala['nome']} Nome")
+            return
+        alvo = await db.buscar_usuario_por_apelido(partes[2])
+        if not alvo:
+            await ok(f"Usuário {partes[2]} não encontrado.")
+            return
+        if alvo["id"] == sala["dono_id"]:
+            await ok(f"{alvo['apelido']} já é o dono da sala {sala['nome']}.")
+            return
+        if await db.contar_salas_do_dono(alvo["id"]) >= MAX_SALAS_POR_USUARIO:
+            await ok(f"{alvo['apelido']} já é dono de {MAX_SALAS_POR_USUARIO} salas e não pode receber mais.")
+            return
+        era_membro = await db.eh_membro(sala["id"], alvo["id"])
+        await db.transferir_sala(sala["id"], alvo["id"])
+        log.info("sala %s transferida de %s para %s por %s", sala["nome"], sala["dono"], alvo["apelido"], eu)
+        if not era_membro:  # entrou agora: recebe a sala e o histórico
+            historico = await db.historico_sala(sala["id"], TTL_HORAS)
+            await enviar_para_usuario(alvo["id"], {"tipo": "sala_entrou", "nome": sala["nome"],
+                                                   "historico": [formatar_msg(m) for m in historico]})
+        await anunciar_sala(sala["nome"])
+        await avisar_sala(sala["id"], sala["nome"], f"👑 {alvo['apelido']} agora é o dono da sala.")
+        await enviar_para_usuario(alvo["id"], {"tipo": "sistema", "mensagem": f"👑 {eu} passou a sala {sala['nome']} para você."})
+        notificar([alvo["id"]], f"💬 {sala['nome']}", f"👑 {eu} passou a sala para você.", "s:" + sala["nome"])
+        await ok(f"Sala {sala['nome']} agora é de {alvo['apelido']}.")
 
     elif cmd == "/apagarsala":
         if not dono and meu_papel < db.ADMIN:
