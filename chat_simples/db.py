@@ -854,3 +854,25 @@ async def resumo_convites(usuario_id):
            FROM convites WHERE convidador_id = $1""",
         usuario_id,
     )
+
+
+# ---------------------------------------------------------------
+# Live
+# ---------------------------------------------------------------
+async def definir_config(chave, valor):
+    await pool.execute(
+        "INSERT INTO config (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO UPDATE SET valor = $2", chave, valor
+    )
+
+
+async def ler_config(chave):
+    return await pool.fetchval("SELECT valor FROM config WHERE chave = $1", chave)
+
+
+async def pixels_hoje(fuso):
+    """Pixels pintados desde a meia-noite (no fuso informado)."""
+    return await pool.fetchval(
+        """SELECT COUNT(*) FROM tela_log
+           WHERE criado_em >= (date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1)""",
+        fuso,
+    )

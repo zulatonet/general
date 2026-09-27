@@ -33,6 +33,8 @@ com página e WebSocket na **mesma porta** e banco **PostgreSQL** externo
 | `GET /api/tela` | Imagem da Tela de Pixels (1 byte por pixel, comprimida) |
 | `GET /api/tela.png` | Foto da tela em PNG 960×540 (pública; usada na prévia e no compartilhamento) |
 | `GET /c/{código}` | Link de convite (prévia com a tela atual; guarda o convite para o cadastro) |
+| `GET /live?chave=` · `/live/ws` · `/live/tela` · `/live/audio/{id}` | Página secreta da live para o OBS (404 sem a chave) |
+| `POST /api/audio?live=1&duracao=ms` | Manda áudio para tocar na live |
 
 ## Variáveis de ambiente
 
@@ -198,6 +200,39 @@ todo mundo pinta junto, com paleta de 16 cores.
   memória e é salva no banco a cada 5 s e ao desligar. O histórico de quem
   pintou o quê fica 30 dias.
 
+## Live 24h 📺
+
+### Página secreta para o OBS (`/live?chave=...`)
+Tela de pixels grande + ranking embaixo + chat da live na lateral, tudo ao vivo:
+- cada pixel pintado mostra um brilho e o nome de quem pintou, toca um "plim"
+  (tom conforme a cor) e soma **+1** animado no ranking; os nomes trocam de
+  lugar com animação quando alguém ultrapassa;
+- **áudios mandados pelos usuários tocam sozinhos**, em fila, com a faixa
+  "🎤 Fulano está falando" — cada um toca **uma vez** e some;
+- topo com 🔴 AO VIVO, pessoas online e pixels pintados hoje.
+
+Sem a chave certa a página responde 404 (fica invisível). O Master pega o link
+com `/live link` e troca com `/live novolink` (o antigo para de funcionar).
+Opções no fim do link: `&chat=0` (sem chat), `&ranking=5` (quantos no
+ranking, 3 a 10), `&fundo=transparente`, `&som=0` (sem "plim"), `&volume=0.35`.
+
+**No OBS:** Fonte → *Navegador* → cole o link, 1920×1080, marque **"Controlar
+áudio via OBS"** para o som dos áudios e do "plim" entrar na transmissão.
+
+### Botão 📺 Live no app (para todos)
+- Vídeo do YouTube em cima (`/live youtube LINK` ou o **ID do canal** `UC...`,
+  que mostra sempre a live atual; `/live youtube off` para tirar).
+- **Chat da live**: na lateral no computador, embaixo no celular; aparece
+  também na transmissão.
+- **🎤 Segure para falar na live**: o áudio (até 10 s) vai para a fila e toca
+  ao vivo. 1 por minuto por pessoa, fila de até 20, descartado se não tocar em
+  10 min. **Fica só na memória do servidor** — não vai para o banco.
+
+### Moderação da live (Admins)
+`/live pular` corta o áudio tocando · `/live limpar` limpa o chat da live ·
+`/live audio off|on` desliga/liga os áudios (desligar apaga a fila). As regras
+de flood valem no chat da live.
+
 ## Regras do chat
 
 ### Mural de Recados
@@ -287,6 +322,9 @@ comandos que a pessoa pode usar.
 | `/apagar Usuario` | Admin | Apaga todas as mensagens de Usuario |
 | `/apagar total` | Master | Apaga todas as mensagens (mantém usuários) |
 | `/cargas Usuario N` | Master | Dá N cargas de pixel (negativo tira) |
+| `/live link` · `/live novolink` | Master | Mostra / troca o link secreto da página da live |
+| `/live youtube LINK_OU_CANAL` · `off` | Master | Vídeo do YouTube do botão 📺 Live |
+| `/live pular` · `limpar` · `audio on/off` | Admin | Moderação da live |
 
 > Ao atualizar de uma versão anterior, o admin existente vira Master
 > automaticamente.

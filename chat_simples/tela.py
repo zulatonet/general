@@ -132,19 +132,21 @@ class Tela:
     async def descarregar(self, transmitir):
         """Transmite as mudanças pendentes, grava o histórico e salva a tela de tempos em tempos.
 
-        Retorna {usuario_id: pixels pintados} desde a última chamada (para o ranking).
+        Retorna ({usuario_id: pixels pintados}, [(x, y, cor, usuario_id)]) desde a
+        última chamada (para o ranking e para a página da live mostrar quem pintou).
         """
+        gravados = []
         # Grava o histórico antes de avisar, para "quem pintou" já responder certo.
         if self.para_gravar:
-            lote, self.para_gravar = self.para_gravar, []
-            await db.registrar_pixels(lote)
+            gravados, self.para_gravar = self.para_gravar, []
+            await db.registrar_pixels(gravados)
         if self.para_enviar:
             lote, self.para_enviar = self.para_enviar, []
             await transmitir({"tipo": "pixels", "p": lote})
         if self.sujo and time.monotonic() - self.ultimo_salvo >= SALVAR_A_CADA_S:
             await self.salvar()
         contagens, self.contagens = self.contagens, {}
-        return contagens
+        return contagens, gravados
 
     async def salvar(self):
         self.sujo = False

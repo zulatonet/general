@@ -9,7 +9,7 @@ import os
 import re
 import secrets
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -82,6 +82,7 @@ PASTA_STATIC = Path(__file__).parent / "static"
 PAGINA = (PASTA_STATIC / "index.html").read_text(encoding="utf-8")
 SERVICE_WORKER = (PASTA_STATIC / "sw.js").read_text(encoding="utf-8")
 MANIFESTO = (PASTA_STATIC / "manifest.webmanifest").read_text(encoding="utf-8")
+PAGINA_LIVE = (PASTA_STATIC / "live.html").read_text(encoding="utf-8")
 
 HELP_USUARIO = """📖 Comandos:
 
@@ -129,6 +130,9 @@ HELP_ADMIN = HELP_USUARIO + """
 /tela apagar X Y Largura Altura
   Pinta de branco uma área da Tela de Pixels.
 
+/live pular  |  /live limpar  |  /live audio on/off
+  Corta o áudio tocando, limpa o chat da live, liga/desliga áudios na live.
+
 /apagar
   Apaga o histórico da conversa aberta (Mural, privada ou sala).
 
@@ -162,6 +166,12 @@ HELP_MASTER = HELP_ADMIN + """
 
 /cargas Usuario N
   Dá N cargas de pixel para Usuario (use negativo para tirar).
+
+/live link  |  /live novolink
+  Mostra (ou troca) o link secreto da página da live para o OBS.
+
+/live youtube LINK_OU_ID_DO_CANAL  |  /live youtube off
+  Define o vídeo do YouTube mostrado no botão 📺 Live.
 
 Sem Master (ou para assumir um vago):
 
@@ -548,12 +558,26 @@ async def tratar_pixel_info(ws, dados):
                       "apelido": row["apelido"] if row else None, "quando": iso(row["criado_em"]) if row else None})
 
 
+async def transmitir_pixels(dados):
+    await transmitir(dados)
+    await enviar_overlays(dados)
+
+
 async def descarregar_tela():
-    """Envia/grava os pixels pendentes e atualiza ranking e convites."""
-    contagens = await tela_pixels.descarregar(transmitir)
+    """Envia/grava os pixels pendentes e atualiza ranking, convites e a página da live."""
+    contagens, gravados = await tela_pixels.descarregar(transmitir_pixels)
+    if live.overlays and gravados:
+        nomes = {uid: conexoes.get(uid, {}).get("apelido", "?") for _, _, _, uid in gravados[-40:]}
+        await enviar_overlays({"tipo": "pintores", "p": [[x, y, c, nomes[uid]] for x, y, c, uid in gravados[-40:]],
+                               "total": len(gravados)})
     if not contagens:
         return
-    for usuario_id, total in await db.somar_pixels(contagens):
+    totais = await db.somar_pixels(contagens)
+    if live.overlays and totais:
+        await enviar_overlays({"tipo": "ranking_mais", "itens": [
+            {"apelido": conexoes.get(uid, {}).get("apelido", "?"), "pixels": total, "ganho": contagens.get(uid, 0)}
+            for uid, total in totais]})
+    for usuario_id, total in totais:
         # Quem acabou de passar do mínimo de pixels ativa o convite com que entrou.
         if total >= PIXELS_PARA_ATIVAR > total - contagens.get(usuario_id, 0):
             await ativar_convite_de(usuario_id)
@@ -615,6 +639,175 @@ async def tratar_convite(ws, usuario_id, request_base):
     })
 
 
+# ---------------------------------------------------------------
+# Live: página secreta para o OBS + chat e áudios da live
+# ---------------------------------------------------------------
+LIVE_MAX_FILA = 20            # áudios esperando para tocar
+LIVE_AUDIO_EXPIRA_S = 600     # áudio não tocado em 10 min é descartado
+LIVE_CHAT_MAX = 80            # mensagens do chat da live guardadas (só em memória)
+LIVE_MAX_TEXTO = 300
+limite_audio_live = LimiteTaxa(1, 60)   # 1 áudio por minuto por pessoa
+
+
+class EstadoLive:
+    def __init__(self):
+        self.overlays = set()                  # WebSockets da página do OBS
+        self.chat = deque(maxlen=LIVE_CHAT_MAX)
+        self.fila = OrderedDict()              # id -> {de, mime, dados, duracao, criado}
+        self.chave = ""
+        self.youtube = None                    # {"tipo": "canal"|"video", "id": ...}
+        self.audio_ligado = True
+
+    def publico(self):
+        return {"youtube": self.youtube, "audio": self.audio_ligado, "chat": list(self.chat)}
+
+
+live = EstadoLive()
+YOUTUBE_ID = re.compile(r"(?:v=|youtu\.be/|/live/|/embed/|/shorts/)([A-Za-z0-9_-]{11})")
+
+
+def interpretar_youtube(texto):
+    """Aceita link de vídeo/live do YouTube ou ID de canal (UC...)."""
+    texto = texto.strip()
+    if re.fullmatch(r"UC[A-Za-z0-9_-]{22}", texto):
+        return {"tipo": "canal", "id": texto}
+    m = re.search(r"/channel/(UC[A-Za-z0-9_-]{22})", texto)
+    if m:
+        return {"tipo": "canal", "id": m.group(1)}
+    m = YOUTUBE_ID.search(texto)
+    if m:
+        return {"tipo": "video", "id": m.group(1)}
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", texto):
+        return {"tipo": "video", "id": texto}
+    return None
+
+
+async def carregar_live():
+    live.chave = await db.config_ou_padrao("live_chave", secrets.token_urlsafe(24))
+    yt = await db.ler_config("live_youtube")
+    live.youtube = json.loads(yt) if yt else None
+    live.audio_ligado = (await db.ler_config("live_audio")) != "off"
+
+
+async def enviar_overlays(dados):
+    if live.overlays:
+        msg = json.dumps(dados)
+        await asyncio.gather(*[ws.send_str(msg) for ws in list(live.overlays)], return_exceptions=True)
+
+
+async def adicionar_chat_live(item):
+    live.chat.append(item)
+    await transmitir({"tipo": "live_msg", **item})
+    await enviar_overlays({"tipo": "live_msg", **item})
+
+
+def limpar_fila_live():
+    agora = time.monotonic()
+    for aid in [a for a, v in live.fila.items() if agora - v["criado"] > LIVE_AUDIO_EXPIRA_S]:
+        del live.fila[aid]
+
+
+async def anunciar_audios_live(ws=None):
+    limpar_fila_live()
+    for aid, v in live.fila.items():
+        dados = {"tipo": "live_audio", "id": aid, "de": v["de"], "duracao_ms": v["duracao"]}
+        await (enviar(ws, dados) if ws else enviar_overlays(dados))
+
+
+def chave_live_ok(request):
+    chave = request.query.get("chave", "")
+    return bool(live.chave) and hmac.compare_digest(chave.encode(), live.chave.encode())
+
+
+async def live_pagina(request):
+    if not chave_live_ok(request):
+        raise web.HTTPNotFound()
+    nonce = secrets.token_urlsafe(16)
+    corpo = PAGINA_LIVE.replace("{{SITE}}", html.escape(request.host or "salavip.live")).replace("<script>", f'<script nonce="{nonce}">')
+    return web.Response(text=corpo, content_type="text/html", headers={
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": (
+            f"default-src 'self'; script-src 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "media-src 'self' blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        ),
+    })
+
+
+async def live_tela(request):
+    if not chave_live_ok(request):
+        raise web.HTTPNotFound()
+    resposta = web.Response(body=bytes(tela_pixels.pixels), content_type="application/octet-stream",
+                            headers={"Cache-Control": "no-store"})
+    resposta.enable_compression()
+    return resposta
+
+
+async def live_audio(request):
+    """A página da live busca o áudio para tocar: ele é entregue uma vez e apagado."""
+    if not chave_live_ok(request):
+        raise web.HTTPNotFound()
+    item = live.fila.pop(request.match_info["id"], None)
+    if not item:
+        return web.json_response({"erro": "Áudio já tocado ou expirado."}, status=410)
+    return web.Response(body=item["dados"], content_type=item["mime"].split(";")[0], headers={"Cache-Control": "no-store"})
+
+
+async def live_ws(request):
+    if not chave_live_ok(request):
+        raise web.HTTPNotFound()
+    ws = web.WebSocketResponse(heartbeat=30, max_msg_size=4096)
+    await ws.prepare(request)
+    live.overlays.add(ws)
+    log.info("página da live conectada (%d aberta(s))", len(live.overlays))
+    try:
+        ranking = await db.ranking("pixels", 10)
+        await enviar(ws, {
+            "tipo": "inicio",
+            "tela": {"largura": tela_mod.LARGURA, "altura": tela_mod.ALTURA, "paleta": tela_mod.PALETA},
+            "ranking": [{"apelido": r["apelido"], "pixels": r["pixels_pintados"]} for r in ranking],
+            "hoje": await db.pixels_hoje(FUSO), "online": len(conexoes), "chat": list(live.chat),
+        })
+        await anunciar_audios_live(ws)
+        async for _ in ws:  # a página só escuta
+            pass
+    finally:
+        live.overlays.discard(ws)
+    return ws
+
+
+async def audio_para_live(usuario_id, apelido, mime, dados, duracao):
+    if not live.audio_ligado:
+        return web.json_response({"erro": "Os áudios na live estão desligados agora."}, status=403)
+    limpar_fila_live()
+    if len(live.fila) >= LIVE_MAX_FILA:
+        return web.json_response({"erro": "A fila de áudios da live está cheia. Tente daqui a pouco."}, status=429)
+    if not limite_audio_live.permitir(usuario_id):
+        return web.json_response({"erro": "Você pode mandar 1 áudio por minuto para a live."}, status=429)
+    if not await pode_enviar(None, usuario_id):
+        return web.json_response({"erro": "Envio travado por flood."}, status=429)
+    audio_id = secrets.token_urlsafe(18)
+    live.fila[audio_id] = {"de": apelido, "mime": mime, "dados": dados, "duracao": duracao, "criado": time.monotonic()}
+    log.info("áudio para a live: %s (%d ms), fila %d", apelido, duracao, len(live.fila))
+    await anunciar_audios_live_um(audio_id)
+    await adicionar_chat_live({"de": apelido, "texto": f"🎤 mandou um áudio para a live ({duracao_texto(duracao)})",
+                               "hora": iso(datetime.now(timezone.utc)), "audio": True})
+    return web.json_response({"ok": True, "posicao": len(live.fila)})
+
+
+async def anunciar_audios_live_um(audio_id):
+    v = live.fila[audio_id]
+    await enviar_overlays({"tipo": "live_audio", "id": audio_id, "de": v["de"], "duracao_ms": v["duracao"]})
+
+
+async def mensagem_live(ws, usuario_id, texto):
+    if len(texto) > LIVE_MAX_TEXTO:
+        await enviar(ws, {"tipo": "erro", "mensagem": f"No chat da live, até {LIVE_MAX_TEXTO} caracteres."})
+        return
+    if not await pode_enviar(ws, usuario_id):
+        return
+    await adicionar_chat_live({"de": conexoes[usuario_id]["apelido"], "texto": texto, "hora": iso(datetime.now(timezone.utc))})
+
+
 # Imagem da tela para compartilhar (cache curto: não gera PNG a cada pedido)
 _png_cache = {"quando": 0.0, "dados": b""}
 
@@ -634,7 +827,7 @@ async def tela_png(request):
 async def limite_por_ip(request, handler):
     """Freia quem martela a API/WebSocket (cada chamada pode consultar o banco)."""
     caminho = request.path
-    if caminho.startswith(("/api/", "/c/")) or caminho in ("/ws", "/health"):
+    if caminho.startswith(("/api/", "/c/", "/live")) or caminho in ("/ws", "/health"):
         ip = ip_cliente(request)
         if not limite_ip.permitir(ip) or (caminho == "/ws" and not limite_ws_ip.permitir(ip)):
             return web.json_response({"erro": "Muitas requisições. Aguarde um pouco."}, status=429,
@@ -700,8 +893,8 @@ async def pagina(request, convite_de=None):
             "Content-Security-Policy": (
                 f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; "
                 "style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; "
-                "connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; form-action 'self'; "
-                "frame-ancestors 'none'"
+                "connect-src 'self' ws: wss:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
+                "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
             ),
         },
     )
@@ -910,9 +1103,11 @@ async def websocket(request):
             "contatos": await db.listar_contatos(usuario_id),
             "salas": [dict(s) for s in await db.listar_salas(usuario_id)],
             "tela": {**info_tela(usuario_id), "cargas": await db.cargas_de(usuario_id)},
+            "live": live.publico(),
         })
         if primeira_conexao:
             await transmitir({"tipo": "presenca", "apelido": info["apelido"], "online": True})
+            await enviar_overlays({"tipo": "online", "n": len(conexoes)})
 
         async for msg in ws:
             if msg.type != WSMsgType.TEXT:
@@ -935,6 +1130,7 @@ async def websocket(request):
                 await db.somar_tempo(tempo)
                 await db.atualizar_ultimo_acesso(usuario_id)
                 await transmitir({"tipo": "presenca", "apelido": info["apelido"], "online": False})
+                await enviar_overlays({"tipo": "online", "n": len(conexoes)})
             except Exception:
                 log.exception("erro ao finalizar conexão")
     return ws
@@ -1048,8 +1244,16 @@ async def tratar_mensagem(ws, usuario_id, dados):
         await enviar(ws, {"tipo": "erro", "mensagem": f"Mensagem muito longa (máximo {MAX_TEXTO} caracteres)."})
         return
 
+    na_live = dados.get("live") is True
     if texto.startswith("/"):
+        if na_live and texto.split()[0].lower() == "/apagar":
+            await enviar(ws, {"tipo": "comando_ok", "mensagem": "No chat da live use /live limpar."})
+            return
         await tratar_comando(ws, usuario_id, texto, destino, nome_sala)
+        return
+
+    if na_live:
+        await mensagem_live(ws, usuario_id, texto)
         return
 
     apelido = info["apelido"]
@@ -1137,6 +1341,8 @@ async def audio_enviar(request):
     duracao = min(duracao, MAX_AUDIO_MS)
 
     apelido = conexoes[usuario_id]["apelido"]
+    if request.query.get("live"):
+        return await audio_para_live(usuario_id, apelido, mime, dados, duracao)
     destino = request.query.get("para")
     if request.query.get("sala"):
         return web.json_response({"erro": "Áudio não é permitido nas salas."}, status=400)
@@ -1409,6 +1615,54 @@ async def tratar_comando(ws, usuario_id, texto, destino, nome_sala):
                 await desconectar_usuario(alvo["id"])
             await ok(f"Senha de {alvo['apelido']} redefinida. As sessões dele foram encerradas.")
 
+    elif cmd == "/live":
+        sub = partes[1].lower() if len(partes) >= 2 else ""
+        base = conexoes[usuario_id].get("base", "")
+        so_master = sub in ("link", "novolink", "youtube")
+        if so_master and meu_papel != db.MASTER:
+            await ok("Só o Master pode fazer isso.")
+            return
+        if sub == "link":
+            await ok(f"🔒 Link secreto da página da live (use no OBS, não compartilhe):\n{base}/live?chave={live.chave}\n"
+                     "Opções no fim do link: &chat=0 (sem chat), &ranking=5, &fundo=transparente, &som=0 (sem plim)")
+        elif sub == "novolink":
+            live.chave = secrets.token_urlsafe(24)
+            await db.definir_config("live_chave", live.chave)
+            for ws_live in list(live.overlays):
+                await ws_live.close(code=4003, message=b"link trocado")
+            await ok(f"🔒 Novo link da live (o antigo parou de funcionar):\n{base}/live?chave={live.chave}")
+        elif sub == "youtube":
+            valor = partes[2] if len(partes) >= 3 else ""
+            if valor.lower() == "off":
+                live.youtube = None
+                await db.definir_config("live_youtube", "")
+            else:
+                yt = interpretar_youtube(valor)
+                if not yt:
+                    await ok("Não reconheci. Use o link da live/vídeo do YouTube ou o ID do canal (começa com UC).")
+                    return
+                live.youtube = yt
+                await db.definir_config("live_youtube", json.dumps(yt))
+            await transmitir({"tipo": "live_config", "youtube": live.youtube, "audio": live.audio_ligado})
+            await ok("📺 YouTube da live " + (f"definido ({live.youtube['tipo']}: {live.youtube['id']})." if live.youtube else "desligado."))
+        elif sub == "pular":
+            await enviar_overlays({"tipo": "live_pular"})
+            await ok("⏭️ Áudio atual cortado na live.")
+        elif sub == "limpar":
+            live.chat.clear()
+            await transmitir({"tipo": "live_limpar"})
+            await enviar_overlays({"tipo": "live_limpar"})
+            await ok("🧹 Chat da live limpo.")
+        elif sub == "audio" and len(partes) >= 3 and partes[2].lower() in ("on", "off"):
+            live.audio_ligado = partes[2].lower() == "on"
+            await db.definir_config("live_audio", "on" if live.audio_ligado else "off")
+            if not live.audio_ligado:
+                live.fila.clear()
+            await transmitir({"tipo": "live_config", "youtube": live.youtube, "audio": live.audio_ligado})
+            await ok("🎤 Áudios na live " + ("ligados." if live.audio_ligado else "desligados (fila apagada)."))
+        else:
+            await ok("Uso: /live link | novolink | youtube LINK | pular | limpar | audio on/off")
+
     elif cmd == "/cargas":
         if meu_papel != db.MASTER:
             await ok("Só o Master pode dar cargas.")
@@ -1664,6 +1918,7 @@ async def ao_iniciar(app):
     await db.conectar(DATABASE_URL)
     log.info("banco conectado")
     await tela_pixels.carregar()
+    await carregar_live()
     privada = VAPID_PRIVATE_KEY or await db.config_ou_padrao(
         "vapid_privada", webpush.Vapid.gerar(VAPID_SUBJECT).privada_b64())
     vapid = webpush.Vapid.de_privada_b64(privada, VAPID_SUBJECT)
@@ -1679,6 +1934,8 @@ async def ao_encerrar(app):
     for info in list(conexoes.values()):
         for ws in list(info["sockets"]):
             await ws.close(code=1001, message=b"servidor reiniciando")
+    for ws_live in list(live.overlays):
+        await ws_live.close(code=1001, message=b"servidor reiniciando")
     if tarefas_push:
         await asyncio.wait(tarefas_push, timeout=5)
     if sessao_push:
@@ -1707,6 +1964,10 @@ def criar_app():
     app.router.add_get("/api/tela", tela_imagem)
     app.router.add_get("/api/tela.png", tela_png)
     app.router.add_get(r"/c/{codigo:[A-Za-z0-9]{1,20}}", pagina_convite)
+    app.router.add_get("/live", live_pagina)
+    app.router.add_get("/live/ws", live_ws)
+    app.router.add_get("/live/tela", live_tela)
+    app.router.add_get(r"/live/audio/{id:[A-Za-z0-9_-]{16,64}}", live_audio)
     app.router.add_get(r"/api/audio/{id:[A-Za-z0-9_-]{16,64}}", audio_ouvir)
     app.router.add_post("/api/entrar", entrar)
     app.router.add_post("/api/sair", sair)

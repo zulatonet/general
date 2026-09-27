@@ -198,6 +198,25 @@ button { font-family: inherit; }
   #tela-paleta { grid-template-columns: repeat(8, 1fr); }
   #tela-pintar { min-width: 96px; }
 }
+/* Live */
+.item.live { background: #5a1a22; }
+.item.live.selecionado { background: #8a2a36; }
+.item.live .ponto-live { width: 8px; height: 8px; border-radius: 50%; background: #ff4d5e; box-shadow: 0 0 6px #ff4d5e; animation: piscar 1.2s infinite; }
+#live-area { flex-shrink: 0; background: #000; }
+#live-video { position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: 42vh; margin: 0 auto; background: #000; }
+#live-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.live-off { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  text-align: center; padding: 16px; color: #bfe; background: radial-gradient(circle, #0b2a18, #03110b); font-size: 14px; }
+.live-off img { width: 72px; height: 72px; border-radius: 50%; }
+#live-dica { font-size: 12px; padding: 7px 12px; background: #12241a; color: #bfe; line-height: 1.4; }
+@media (min-width: 901px) {
+  #chat.modo-live { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto 1fr auto; }
+  #chat.modo-live #chat-titulo { grid-column: 1 / -1; }
+  #chat.modo-live #live-area { grid-column: 1; grid-row: 2 / 4; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+  #chat.modo-live #live-video { max-height: none; }
+  #chat.modo-live #mensagens { grid-column: 2; grid-row: 2; border-left: 1px solid #222; min-height: 0; }
+  #chat.modo-live #form { grid-column: 2; grid-row: 3; border-left: 1px solid #222; }
+}
 .escondido { display: none !important; }
 
 /* Celular: barra lateral vira menu deslizante */
@@ -349,6 +368,10 @@ button { font-family: inherit; }
       </div>
       <div id="tela-recado" class="escondido"></div>
     </div>
+    <div id="live-area" class="escondido">
+      <div id="live-video"></div>
+      <div id="live-dica">🎤 Segure o microfone para <b>falar na live</b>: seu áudio toca uma vez, ao vivo, para todo mundo (até 10 s, 1 por minuto). 💬 O chat também aparece na transmissão.</div>
+    </div>
     <div id="mensagens"></div>
     <div id="form">
       <textarea id="texto" rows="1" placeholder="Mensagem..." disabled autocomplete="off" maxlength="2000"></textarea>
@@ -369,6 +392,7 @@ try { localStorage.removeItem("chat_device_id"); localStorage.removeItem("chat_n
 const MURAL = "MURAL";
 const TELA = "TELA";
 const RANKING = "RANKING";
+const LIVE = "LIVE";
 const LIMITE_LISTA = 200;   // máximo de pessoas renderizadas em "Todos" sem busca
 const ADMIN = 1, MASTER = 2;
 
@@ -484,7 +508,9 @@ const TRATADORES = {
     salas = new Map(d.salas.map(s => [s.nome, s]));
     iniciarTela(d.tela);
     definirCargas(d.tela.cargas || 0);
-    const aindaExiste = selecionado === MURAL || selecionado === TELA || selecionado === RANKING || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
+    liveInfo = { youtube: d.live.youtube, audio: d.live.audio };
+    conversas[LIVE] = d.live.chat.map(msgLive);
+    const aindaExiste = [MURAL, TELA, RANKING, LIVE].includes(selecionado) || (ehSala(selecionado) ? salas.get(nomeDaChave(selecionado))?.membro : usuarios.has(nomeDaChave(selecionado)));
     selecionar(aindaExiste ? selecionado : MURAL, false);
     if (conversaPendente) { abrirChave(conversaPendente); conversaPendente = null; }
     if (pushSuportado && Notification.permission === "granted") inscreverPush();
@@ -530,6 +556,16 @@ const TRATADORES = {
     tocarSom();
   },
   convite(d) { mostrarConvite(d); },
+  live_msg(d) {
+    empurrar(LIVE, msgLive(d));
+    if (conversas[LIVE].length > 120) conversas[LIVE].splice(0, conversas[LIVE].length - 120);
+    if (selecionado === LIVE) renderizarConversa();
+  },
+  live_limpar() { conversas[LIVE] = []; if (selecionado === LIVE) renderizarConversa(); },
+  live_config(d) {
+    liveInfo = { youtube: d.youtube, audio: d.audio };
+    if (selecionado === LIVE) { videoAtual = null; atualizarTitulo(); atualizarEntrada(); renderizarConversa(); }
+  },
   ranking(d) { mostrarRanking(d); },
   pixel_info(d) { mostrarInfoPixel(d); },
   audio_ouvido(d) {
@@ -855,6 +891,12 @@ function renderizarLista() {
   mural.appendChild(span("Mural de Recados", "nome-item"));
   lista.appendChild(mural);
 
+  const itemLive = criarItem("live" + (selecionado === LIVE ? " selecionado" : ""), () => selecionar(LIVE));
+  itemLive.appendChild(span("📺"));
+  itemLive.appendChild(span("Live", "nome-item"));
+  itemLive.appendChild(span("", "ponto-live"));
+  lista.appendChild(itemLive);
+
   // Salas
   const btnCriar = document.createElement("button");
   btnCriar.textContent = "+ Criar";
@@ -926,7 +968,10 @@ function atualizarTitulo() {
   const acao = el("titulo-acao");
   acao.classList.add("escondido");
   let nome, sub;
-  if (selecionado === RANKING) {
+  if (selecionado === LIVE) {
+    nome = "📺 Live SalaVip";
+    sub = "Ao vivo 24h · " + (liveInfo.audio ? "segure 🎤 para falar na live" : "áudios na live pausados") + " · chat aparece na transmissão";
+  } else if (selecionado === RANKING) {
     nome = "🏆 Ranking";
     sub = "Quem mais pinta e quem mais participa da SalaVip";
   } else if (selecionado === TELA) {
@@ -957,6 +1002,8 @@ function atualizarEntrada() {
   let dica = "Mensagem...";
   if (selecionado === MURAL) {
     dica = meuPapel >= ADMIN ? "Recado para todos..." : "📢 Só Admins escrevem aqui";
+  } else if (selecionado === LIVE) {
+    dica = "Mensagem no chat da live...";
   } else if (ehSala(selecionado)) {
     dica = "Mensagem para a sala " + nomeDaChave(selecionado) + "...";
   } else {
@@ -979,6 +1026,10 @@ function formatarHora(hora) {
 }
 
 function renderizarConversa() {
+  const naLive = selecionado === LIVE;
+  el("chat").classList.toggle("modo-live", naLive);
+  el("live-area").classList.toggle("escondido", !naLive);
+  if (naLive) mostrarVideoLive(); else if (videoAtual !== null) { el("live-video").innerHTML = ""; videoAtual = null; }
   const naTela = selecionado === TELA;
   el("tela-area").classList.toggle("escondido", !naTela);
   el("mensagens").classList.toggle("escondido", naTela);
@@ -991,6 +1042,7 @@ function renderizarConversa() {
     const vazio = document.createElement("div");
     vazio.className = "vazio";
     vazio.textContent = selecionado === MURAL ? "Nenhum recado ainda."
+      : selecionado === LIVE ? "Seja o primeiro a falar no chat da live! 💬"
       : "Nenhuma mensagem. As mensagens aqui somem após " + ttlHoras + " horas.";
     container.appendChild(vazio);
   }
@@ -1023,7 +1075,8 @@ function enviarMensagem() {
     return;
   }
   const dados = { texto, para: null, sala: null };
-  if (ehSala(selecionado)) dados.sala = nomeDaChave(selecionado);
+  if (selecionado === LIVE) dados.live = true;
+  else if (ehSala(selecionado)) dados.sala = nomeDaChave(selecionado);
   else if (ehPrivada(selecionado)) dados.para = nomeDaChave(selecionado);
   enviarWs(dados);
   limparTexto();
@@ -1080,7 +1133,7 @@ document.addEventListener("visibilitychange", () => {
 
 function abrirChave(chave) {
   if (!meuNome) { conversaPendente = chave; return; }
-  const ok = chave === MURAL || chave === TELA || chave === RANKING
+  const ok = [MURAL, TELA, RANKING, LIVE].includes(chave)
     || (ehPrivada(chave) && usuarios.has(nomeDaChave(chave)))
     || (ehSala(chave) && salas.get(nomeDaChave(chave))?.membro);
   selecionar(ok ? chave : MURAL);
@@ -1282,7 +1335,8 @@ let tocando = null;       // { id, audio, url }
 const cacheAudios = new Map();  // id -> URL (só áudios do Mural, que podem tocar de novo)
 
 function audioPermitidoAqui() {
-  return gravacaoSuportada && conectado() && (ehPrivada(selecionado) || (selecionado === MURAL && meuPapel >= ADMIN));
+  return gravacaoSuportada && conectado() && (ehPrivada(selecionado) || (selecionado === MURAL && meuPapel >= ADMIN)
+    || (selecionado === LIVE && liveInfo.audio));
 }
 
 function atualizarBotoes() {
@@ -1377,11 +1431,14 @@ function finalizarGravacao(enviar) {
 async function enviarAudio(blob, duracao, destino) {
   const q = new URLSearchParams({ duracao: String(duracao) });
   if (ehPrivada(destino)) q.set("para", nomeDaChave(destino));
+  if (destino === LIVE) q.set("live", "1");
   try {
     const resp = await fetch("/api/audio?" + q, { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+    const r = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      const erro = (await resp.json().catch(() => ({}))).erro || "Não foi possível enviar o áudio.";
-      adicionar(destino, { texto: "🎤 " + erro, classe: "sistema" });
+      adicionar(destino, { texto: "🎤 " + (r.erro || "Não foi possível enviar o áudio."), classe: "sistema" });
+    } else if (destino === LIVE) {
+      adicionar(LIVE, { texto: "🎤 Seu áudio entrou na fila da live" + (r.posicao > 1 ? " (posição " + r.posicao + ")" : "") + ". Ele toca uma vez, ao vivo!", classe: "sistema" });
     }
   } catch (err) {
     adicionar(destino, { texto: "🎤 Sem conexão: o áudio não foi enviado.", classe: "sistema" });
@@ -1846,6 +1903,42 @@ function renderizarRanking() {
   const dica = Object.assign(document.createElement("div"), { className: "vazio",
     textContent: "Pinte mais e convide amigos: cada amigo ativo te dá cargas ⚡ para pintar sem esperar." });
   c.appendChild(dica);
+}
+
+// ---------------------------------------------------------------
+// Live (vídeo do YouTube + chat e áudios que vão para a transmissão)
+// ---------------------------------------------------------------
+let liveInfo = { youtube: null, audio: true };
+let videoAtual = null;
+
+function msgLive(m) {
+  return { remetente: m.de, texto: m.texto, hora: m.hora, classe: m.de === meuNome ? "enviada" : "recebida" };
+}
+
+function mostrarVideoLive() {
+  const yt = liveInfo.youtube;
+  const src = !yt ? "" : yt.tipo === "canal"
+    ? "https://www.youtube.com/embed/live_stream?channel=" + encodeURIComponent(yt.id) + "&autoplay=1&mute=1"
+    : "https://www.youtube.com/embed/" + encodeURIComponent(yt.id) + "?autoplay=1&mute=1";
+  if (src === videoAtual) return;
+  videoAtual = src;
+  const box = el("live-video");
+  box.innerHTML = "";
+  if (!src) {
+    const off = document.createElement("div");
+    off.className = "live-off";
+    const logo = document.createElement("img"); logo.src = "/icones/logo-256.png"; logo.alt = "";
+    off.append(logo, span("📺 A transmissão começa em breve."), span("Enquanto isso, pinte a tela e mande seu áudio pelo 🎤!"));
+    box.appendChild(off);
+    return;
+  }
+  const f = document.createElement("iframe");
+  f.src = src;
+  f.title = "Live SalaVip";
+  f.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+  f.allowFullscreen = true;
+  f.referrerPolicy = "strict-origin-when-cross-origin";
+  box.appendChild(f);
 }
 
 renderizarLista();
