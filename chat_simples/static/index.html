@@ -370,7 +370,7 @@ button { font-family: inherit; }
     </div>
     <div id="live-area" class="escondido">
       <div id="live-video"></div>
-      <div id="live-dica">🎤 Segure o microfone para <b>falar na live</b>: seu áudio toca uma vez, ao vivo, para todo mundo (até 10 s, 1 por minuto). 💬 O chat também aparece na transmissão.</div>
+      <div id="live-dica">🎤 Segure o microfone para <b>falar na live</b>: seu áudio toca uma vez, ao vivo, para todo mundo (até 5 s, 1 a cada 20 s — curtinho pra não virar música). 💬 O chat também aparece na transmissão.</div>
     </div>
     <div id="mensagens"></div>
     <div id="form">
@@ -1329,6 +1329,8 @@ el("aviso-fechar").onclick = () => {
 // Áudio: segure 🎤 para gravar (até 10 s), solte para enviar
 // ---------------------------------------------------------------
 const MAX_AUDIO_MS = 10000;
+const MAX_AUDIO_LIVE_MS = 5000;   // na live: curto para evitar música (direitos autorais)
+const limiteGravacao = (destino) => destino === LIVE ? MAX_AUDIO_LIVE_MS : MAX_AUDIO_MS;
 const gravacaoSuportada = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 let gravacao = null;      // { recorder, stream, partes, inicio, timer, cancelada, xInicial, ativa }
 let tocando = null;       // { id, audio, url }
@@ -1394,10 +1396,11 @@ async function iniciarGravacao(e) {
   gravacao.timer = setInterval(() => {
     if (!gravacao) return;
     const ms = Date.now() - gravacao.inicio;
-    const seg = Math.min(10, Math.floor(ms / 1000));
+    const seg = Math.min(limiteGravacao(gravacao.destino) / 1000, Math.floor(ms / 1000));
     el("rec-tempo").textContent = "0:" + String(seg).padStart(2, "0");
-    el("rec-barra").style.width = Math.min(100, ms / MAX_AUDIO_MS * 100) + "%";
-    if (ms >= MAX_AUDIO_MS) finalizarGravacao(true);
+    const limite = limiteGravacao(gravacao.destino);
+    el("rec-barra").style.width = Math.min(100, ms / limite * 100) + "%";
+    if (ms >= limite) finalizarGravacao(true);
   }, 100);
 }
 
@@ -1416,7 +1419,7 @@ function finalizarGravacao(enviar) {
   gravacao = null;
   clearInterval(g.timer);
   mostrarGravacao(false);
-  const duracao = Math.min(MAX_AUDIO_MS, Date.now() - g.inicio);
+  const duracao = Math.min(limiteGravacao(g.destino), Date.now() - g.inicio);
   g.recorder.onstop = () => {
     g.stream.getTracks().forEach(t => t.stop());
     atualizarBotoes();

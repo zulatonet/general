@@ -646,7 +646,9 @@ LIVE_MAX_FILA = 20            # áudios esperando para tocar
 LIVE_AUDIO_EXPIRA_S = 600     # áudio não tocado em 10 min é descartado
 LIVE_CHAT_MAX = 80            # mensagens do chat da live guardadas (só em memória)
 LIVE_MAX_TEXTO = 300
-limite_audio_live = LimiteTaxa(1, 60)   # 1 áudio por minuto por pessoa
+LIVE_AUDIO_MAX_MS = 5000                # curto de propósito: evita tocar música (direitos autorais)
+LIVE_AUDIO_INTERVALO_S = 20
+limite_audio_live = LimiteTaxa(1, LIVE_AUDIO_INTERVALO_S)   # 1 áudio a cada 20 s por pessoa
 
 
 class EstadoLive:
@@ -781,8 +783,10 @@ async def audio_para_live(usuario_id, apelido, mime, dados, duracao):
     limpar_fila_live()
     if len(live.fila) >= LIVE_MAX_FILA:
         return web.json_response({"erro": "A fila de áudios da live está cheia. Tente daqui a pouco."}, status=429)
+    if duracao > LIVE_AUDIO_MAX_MS + 700:
+        return web.json_response({"erro": f"Na live o áudio pode ter até {LIVE_AUDIO_MAX_MS // 1000} segundos."}, status=400)
     if not limite_audio_live.permitir(usuario_id):
-        return web.json_response({"erro": "Você pode mandar 1 áudio por minuto para a live."}, status=429)
+        return web.json_response({"erro": f"Você pode mandar 1 áudio a cada {LIVE_AUDIO_INTERVALO_S} segundos para a live."}, status=429)
     if not await pode_enviar(None, usuario_id):
         return web.json_response({"erro": "Envio travado por flood."}, status=429)
     audio_id = secrets.token_urlsafe(18)

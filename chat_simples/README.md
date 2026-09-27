@@ -224,9 +224,10 @@ ranking, 3 a 10), `&fundo=transparente`, `&som=0` (sem "plim"), `&volume=0.35`.
   que mostra sempre a live atual; `/live youtube off` para tirar).
 - **Chat da live**: na lateral no computador, embaixo no celular; aparece
   também na transmissão.
-- **🎤 Segure para falar na live**: o áudio (até 10 s) vai para a fila e toca
-  ao vivo. 1 por minuto por pessoa, fila de até 20, descartado se não tocar em
-  10 min. **Fica só na memória do servidor** — não vai para o banco.
+- **🎤 Segure para falar na live**: o áudio (**até 5 s**, curto de propósito
+  para ninguém tocar música e gerar problema de direitos autorais) vai para a
+  fila e toca ao vivo. **1 a cada 20 s** por pessoa, fila de até 20, descartado
+  se não tocar em 10 min. **Fica só na memória do servidor** — não vai para o banco.
 
 ### Moderação da live (Admins)
 `/live pular` corta o áudio tocando · `/live limpar` limpa o chat da live ·
