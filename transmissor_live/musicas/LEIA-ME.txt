@@ -1,0 +1,3 @@
+Coloque aqui os arquivos de música (.mp3, .m4a, .ogg, .wav, .flac).
+Eles entram na imagem no próximo deploy e tocam em loop, embaralhados.
+Use só música livre de direitos autorais.

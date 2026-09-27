@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY iniciar.sh /usr/local/bin/iniciar.sh
+# Músicas enviadas pelo GitHub (pasta musicas/). O volume do Easypanel, se houver, fica em /musicas.
+COPY musicas /musicas_repo
 RUN chmod 755 /usr/local/bin/iniciar.sh \
     && useradd --create-home --uid 10001 live \
     && mkdir -p /musicas && chown live:live /musicas

@@ -26,11 +26,16 @@ ffmpeg: filma a tela + som da página + músicas ──> RTMP do YouTube
 4. **Environment**: copie o `.env.example` e preencha pelo menos:
    - `LIVE_URL`: no chat, como Master, digite `/live link` e cole o endereço.
    - `YOUTUBE_KEY`: YouTube Studio → Transmitir ao vivo → Stream → Chave da transmissão.
-5. **Músicas** (escolha uma das formas):
-   - **Mounts → Volume** montado em `/musicas` e envie os `.mp3` para ele
-     (pelo gerenciador de arquivos do Easypanel ou via SFTP na pasta do volume), ou
+5. **Músicas** (qualquer uma das formas, podem ser usadas juntas):
+   - **Pelo GitHub (mais fácil)**: no site do GitHub, abra a pasta
+     `transmissor_live/musicas/` na branch do projeto → **Add file → Upload
+     files** → arraste os `.mp3` → **Commit changes**. Depois faça o deploy:
+     as músicas entram na imagem.
+   - **Volume do Easypanel** montado em `/musicas`: o Easypanel não tem botão de
+     upload para volumes; os arquivos ficam na VPS em
+     `/etc/easypanel/projects/<projeto>/<serviço>/volumes/<nome do volume>/`.
+     Envie por SFTP (WinSCP/FileZilla, usuário root) e reinicie o serviço.
    - `MUSICAS_URLS` com links diretos de `.mp3`, separados por vírgula.
-   Ao trocar as músicas, reinicie o serviço.
 6. **Domains / Ports**: nada. **Deploy**.
 
 Nos logs aparece `transmitindo 1280x720 30fps...` e, em ~20 s, a live fica

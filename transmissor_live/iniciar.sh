@@ -20,7 +20,7 @@ AUDIO_KBPS="${AUDIO_KBPS:-160}"
 PRESET="${PRESET:-veryfast}"                      # ultrafast gasta menos CPU, com imagem um pouco pior
 MUSICA_VOLUME="${MUSICA_VOLUME:-0.35}"            # 0 a 1
 ABAIXAR_MUSICA="${ABAIXAR_MUSICA:-1}"             # 1 = a música baixa sozinha quando alguém fala
-PASTA_MUSICAS="${PASTA_MUSICAS:-/musicas}"
+PASTA_MUSICAS="${PASTA_MUSICAS:-/musicas /musicas_repo}"   # pastas separadas por espaço
 MUSICAS_URLS="${MUSICAS_URLS:-}"                  # links diretos de .mp3 (separados por espaço ou vírgula)
 REINICIAR_NAVEGADOR_H="${REINICIAR_NAVEGADOR_H:-12}"   # recarrega o navegador de tempos em tempos (0 = nunca)
 CHROMIUM_BIN="${CHROMIUM_BIN:-chromium}"
@@ -82,7 +82,8 @@ baixar_musicas() {
 }
 montar_playlist() {
   : > "$PLAYLIST"
-  find "$PASTA_MUSICAS" "$TRABALHO/baixadas" -maxdepth 2 -type f \
+  # shellcheck disable=SC2086
+  find $PASTA_MUSICAS "$TRABALHO/baixadas" -maxdepth 2 -type f \
     \( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.aac' -o -iname '*.ogg' -o -iname '*.wav' -o -iname '*.flac' \) \
     2>/dev/null | shuf | while read -r arq; do
       printf "file '%s'\n" "${arq//\'/\'\\\'\'}" >> "$PLAYLIST"
@@ -133,7 +134,7 @@ transmitir() {
       filtro+="[musica][voz]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]"
     fi
   else
-    log "sem músicas de fundo (coloque arquivos em $PASTA_MUSICAS ou use MUSICAS_URLS)"
+    log "sem músicas de fundo (coloque arquivos na pasta musicas/ do GitHub, no volume /musicas ou use MUSICAS_URLS)"
     filtro="[1:a]${formato}[aout]"
   fi
   local gop=$((FPS * 2))
