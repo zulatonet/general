@@ -116,9 +116,13 @@ baixar_musicas
 navegador() {
   while true; do
     rm -rf "$TRABALHO/perfil"
+    # Perfil novo já em português e com o tradutor desligado (senão aparece o balão "Traduzir?" na live).
+    mkdir -p "$TRABALHO/perfil/Default"
+    echo '{"translate":{"enabled":false},"intl":{"accept_languages":"pt-BR,pt"},"browser":{"has_seen_welcome_page":true}}' \
+      > "$TRABALHO/perfil/Default/Preferences"
     log "abrindo a página da live no navegador"
-    "$CHROMIUM_BIN" --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check \
-      --disable-infobars --disable-session-crashed-bubble --disable-features=Translate,MediaRouter \
+    LANGUAGE=pt_BR "$CHROMIUM_BIN" --lang=pt-BR --accept-lang=pt-BR,pt --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check \
+      --disable-infobars --disable-session-crashed-bubble --disable-features=Translate,TranslateUI,MediaRouter \
       --autoplay-policy=no-user-gesture-required --hide-scrollbars --force-device-scale-factor=1 \
       --kiosk --window-position=0,0 --window-size="${LARGURA},${ALTURA}" \
       --user-data-dir="$TRABALHO/perfil" --password-store=basic "$LIVE_URL" >/dev/null 2>&1
