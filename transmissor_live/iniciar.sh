@@ -10,9 +10,23 @@
 set -u
 
 # ---------------- configuração (variáveis de ambiente) ----------------
+# Aceita "FPS=15   # comentário" colado no painel: corta o comentário e os espaços.
+limpar() {
+  local nome v
+  for nome in "$@"; do
+    v="${!nome-}"
+    [ "$nome" != LIVE_URL ] && v="${v%%#*}"          # na LIVE_URL o # não é comentário
+    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+    printf -v "$nome" '%s' "$v"
+  done
+}
+limpar LIVE_URL YOUTUBE_KEY RTMP_URL RTMP_EXTRA RESOLUCAO FPS VIDEO_KBPS AUDIO_KBPS PRESET \
+       MUSICA_VOLUME ABAIXAR_MUSICA PASTA_MUSICAS MUSICAS_URLS REINICIAR_NAVEGADOR_H
+
 LIVE_URL="${LIVE_URL:-}"                          # link secreto da página da live (/live link no chat)
 YOUTUBE_KEY="${YOUTUBE_KEY:-}"                    # chave de transmissão do YouTube
 RTMP_URL="${RTMP_URL:-rtmp://a.rtmp.youtube.com/live2/${YOUTUBE_KEY}}"
+RTMP_EXTRA="${RTMP_EXTRA:-}"                      # outros destinos ao mesmo tempo (Rumble, Twitch...), separados por vírgula
 RESOLUCAO="${RESOLUCAO:-1280x720}"
 FPS="${FPS:-30}"
 VIDEO_KBPS="${VIDEO_KBPS:-2500}"
@@ -42,6 +56,12 @@ if [ -z "$YOUTUBE_KEY" ] && [ "${RTMP_URL}" = "rtmp://a.rtmp.youtube.com/live2/"
   log "ERRO: defina YOUTUBE_KEY (YouTube Studio > Transmitir ao vivo > Chave da transmissão)."
   exit 1
 fi
+
+# Destinos: o principal + os extras. Um só vai direto; vários usam o "tee"
+# (o vídeo é codificado uma vez e enviado a todos).
+DESTINOS=("$RTMP_URL")
+for d in ${RTMP_EXTRA//,/ }; do DESTINOS+=("$d"); done
+ocultar() { echo "${1%/*}/****"; }
 
 PIDS=()
 encerrar() {
@@ -137,18 +157,53 @@ transmitir() {
     log "sem músicas de fundo (coloque arquivos na pasta musicas/ do GitHub, no volume /musicas ou use MUSICAS_URLS)"
     filtro="[1:a]${formato}[aout]"
   fi
-  local gop=$((FPS * 2))
+  local gop=$((FPS * 2)) saida
+  if [ "${#DESTINOS[@]}" -eq 1 ]; then
+    saida=(-f flv "${DESTINOS[0]}")
+  else
+    # onfail=ignore: se um destino cair, os outros continuam no ar.
+    local lista="" d
+    for d in "${DESTINOS[@]}"; do lista+="${lista:+|}[f=flv:onfail=ignore]${d}"; done
+    saida=(-flags +global_header -f tee "$lista")
+  fi
   ffmpeg -nostdin -y -hide_banner -loglevel "${FFMPEG_LOG:-warning}" -stats_period 60 \
     "${entradas[@]}" \
     -filter_complex "$filtro" -map 0:v -map "[aout]" \
     -c:v libx264 -preset "$PRESET" -b:v "${VIDEO_KBPS}k" -maxrate "${VIDEO_KBPS}k" -bufsize "$((VIDEO_KBPS * 2))k" \
     -pix_fmt yuv420p -g "$gop" -keyint_min "$gop" -sc_threshold 0 -r "$FPS" \
     -c:a aac -b:a "${AUDIO_KBPS}k" -ar 44100 \
-    -f flv "$RTMP_URL"
+    "${saida[@]}" 2>&1 | stdbuf -oL tr '\r' '\n' | vigiar_destinos
+  return "${PIPESTATUS[0]}"
+}
+
+# Lê o log do ffmpeg. Se um destino cair (os outros seguem no ar), reinicia o
+# ffmpeg depois de um tempo para reconectá-lo. Cada reinício corta uns segundos
+# de todos, então a espera dobra a cada falha seguida (1, 2, 4... até 30 min).
+vigiar_destinos() {
+  local linha agendado="" d falhas espera
+  while IFS= read -r linha; do
+    for d in "${DESTINOS[@]}"; do linha="${linha//"$d"/$(ocultar "$d")}"; done   # não mostra as chaves no log
+    [ -n "$linha" ] && echo "$linha"
+    if [[ "$linha" == *"Slave muxer"*"failed"* ]] && [ -z "$agendado" ]; then
+      falhas=$(cat "$TRABALHO/falhas" 2>/dev/null || echo 0)
+      espera=$(( ${RECONECTAR_S:-60} << (falhas < 5 ? falhas : 5) ))
+      [ "$espera" -gt 1800 ] && espera=1800
+      echo $((falhas + 1)) > "$TRABALHO/falhas"
+      log "um destino caiu; os outros seguem no ar. Tentando reconectar em $((espera / 60)) min"
+      ( sleep "$espera"; pkill -u "$(id -u)" -x ffmpeg ) &
+      agendado=$!
+    fi
+  done
+  if [ -n "$agendado" ]; then
+    kill "$agendado" 2>/dev/null   # o ffmpeg já parou por conta própria
+  else
+    echo 0 > "$TRABALHO/falhas"    # rodou sem nenhum destino caído
+  fi
+  return 0
 }
 
 while true; do
-  log "transmitindo ${RESOLUCAO} ${FPS}fps ${VIDEO_KBPS}kbps para ${RTMP_URL%/*}/****"
+  log "transmitindo ${RESOLUCAO} ${FPS}fps ${VIDEO_KBPS}kbps para: $(for d in "${DESTINOS[@]}"; do printf '%s ' "$(ocultar "$d")"; done)"
   transmitir
   log "ffmpeg parou (código $?); tentando de novo em 5 s"
   sleep 5

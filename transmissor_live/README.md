@@ -45,7 +45,12 @@ Nos logs aparece `transmitindo 1280x720 30fps...` e, em ~20 s, a live fica
 
 - **CPU**: 720p 30fps com `PRESET=veryfast` usa perto de 1,5 a 2 vCPUs. Se a VPS
   sofrer, use `PRESET=ultrafast`, `FPS=24` ou `RESOLUCAO=854x480`.
-- **Internet**: `VIDEO_KBPS=2500` + áudio ≈ 3 Mbps de upload constante.
+- **Internet**: `VIDEO_KBPS=2500` + áudio ≈ 3 Mbps de upload constante, por destino.
+- **Vários destinos** (`RTMP_EXTRA`): o vídeo é codificado uma vez só e enviado
+  a todos, então não pesa mais na CPU. Se um destino cair, os outros seguem no
+  ar; o transmissor tenta reconectá-lo depois de 1, 2, 4... até 30 min (cada
+  tentativa corta uns 5 s de todos os destinos).
+- Pode colar comentários nas variáveis (`FPS=15   # ...`): são ignorados.
 - **YouTube**: no Studio, **desligue o encerramento automático** da transmissão
   (Configurações → "Encerrar transmissão automaticamente"), para a live
   sobreviver a quedas curtas.
@@ -60,7 +65,8 @@ Nos logs aparece `transmitindo 1280x720 30fps...` e, em ~20 s, a live fica
 |---|---|---|
 | `LIVE_URL` | (obrigatória) | link secreto da página da live |
 | `YOUTUBE_KEY` | (obrigatória) | chave da transmissão |
-| `RTMP_URL` | YouTube + chave | outro destino RTMP (Twitch, Kick...) |
+| `RTMP_URL` | YouTube + chave | outro destino RTMP no lugar do YouTube |
+| `RTMP_EXTRA` | vazio | destinos extras ao mesmo tempo (Rumble, Twitch...), separados por vírgula |
 | `RESOLUCAO` | `1280x720` | tamanho do vídeo |
 | `FPS` | `30` | quadros por segundo |
 | `VIDEO_KBPS` / `AUDIO_KBPS` | `2500` / `160` | qualidade |
