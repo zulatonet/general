@@ -27,8 +27,8 @@ ffmpeg: filma a tela + som da página + músicas ──> RTMP do YouTube
    - `LIVE_URL`: no chat, como Master, digite `/live link` e cole o endereço.
    - `YOUTUBE_KEY`: YouTube Studio → Transmitir ao vivo → Stream → Chave da transmissão.
 5. **Músicas** (qualquer uma das formas, podem ser usadas juntas):
-   - **Pelo GitHub (mais fácil)**: no site do GitHub, abra a pasta
-     `transmissor_live/musicas/` na branch do projeto → **Add file → Upload
+   - **Pelo GitHub (mais fácil)**: no site do GitHub, troque para a branch do
+     projeto (não a `main`), abra a pasta `transmissor_live/musicas/` → **Add file → Upload
      files** → arraste os `.mp3` → **Commit changes**. Depois faça o deploy:
      as músicas entram na imagem.
    - **Volume do Easypanel** montado em `/musicas`: o Easypanel não tem botão de
@@ -72,6 +72,7 @@ Nos logs aparece `transmitindo 1280x720 30fps...` e, em ~20 s, a live fica
 | `VIDEO_KBPS` / `AUDIO_KBPS` | `2500` / `160` | qualidade |
 | `PRESET` | `veryfast` | `ultrafast` gasta menos CPU |
 | `MUSICA_VOLUME` | `0.35` | volume da música (0 a 1) |
+| `MUSICAS_ORDEM` | `aleatoria` | `aleatoria` (sorteia de novo a cada volta) ou `sequencial` (ordem do nome) |
 | `ABAIXAR_MUSICA` | `1` | abaixa a música quando alguém fala |
 | `MUSICAS_URLS` | vazio | links de `.mp3` para baixar ao iniciar |
 | `REINICIAR_NAVEGADOR_H` | `12` | reabre o navegador a cada N horas (0 = nunca) |

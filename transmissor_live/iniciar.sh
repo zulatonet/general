@@ -21,7 +21,7 @@ limpar() {
   done
 }
 limpar LIVE_URL YOUTUBE_KEY RTMP_URL RTMP_EXTRA RESOLUCAO FPS VIDEO_KBPS AUDIO_KBPS PRESET \
-       MUSICA_VOLUME ABAIXAR_MUSICA PASTA_MUSICAS MUSICAS_URLS REINICIAR_NAVEGADOR_H
+       MUSICA_VOLUME ABAIXAR_MUSICA MUSICAS_ORDEM PASTA_MUSICAS MUSICAS_URLS REINICIAR_NAVEGADOR_H
 
 LIVE_URL="${LIVE_URL:-}"                          # link secreto da página da live (/live link no chat)
 YOUTUBE_KEY="${YOUTUBE_KEY:-}"                    # chave de transmissão do YouTube
@@ -35,6 +35,7 @@ PRESET="${PRESET:-veryfast}"                      # ultrafast gasta menos CPU, c
 MUSICA_VOLUME="${MUSICA_VOLUME:-0.35}"            # 0 a 1
 ABAIXAR_MUSICA="${ABAIXAR_MUSICA:-1}"             # 1 = a música baixa sozinha quando alguém fala
 PASTA_MUSICAS="${PASTA_MUSICAS:-/musicas /musicas_repo}"   # pastas separadas por espaço
+MUSICAS_ORDEM="${MUSICAS_ORDEM:-aleatoria}"      # aleatoria (sorteia a cada volta) ou sequencial
 MUSICAS_URLS="${MUSICAS_URLS:-}"                  # links diretos de .mp3 (separados por espaço ou vírgula)
 REINICIAR_NAVEGADOR_H="${REINICIAR_NAVEGADOR_H:-12}"   # recarrega o navegador de tempos em tempos (0 = nunca)
 CHROMIUM_BIN="${CHROMIUM_BIN:-chromium}"
@@ -101,14 +102,33 @@ baixar_musicas() {
   done
 }
 montar_playlist() {
-  : > "$PLAYLIST"
+  local arquivos=() volta=() arq rodada ultima="" ordem
   # shellcheck disable=SC2086
-  find $PASTA_MUSICAS "$TRABALHO/baixadas" -maxdepth 2 -type f \
+  mapfile -t arquivos < <(find $PASTA_MUSICAS "$TRABALHO/baixadas" -maxdepth 2 -type f \
     \( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.aac' -o -iname '*.ogg' -o -iname '*.wav' -o -iname '*.flac' \) \
-    2>/dev/null | shuf | while read -r arq; do
-      printf "file '%s'\n" "${arq//\'/\'\\\'\'}" >> "$PLAYLIST"
+    2>/dev/null | sort)
+  : > "$PLAYLIST"
+  [ "${#arquivos[@]}" -eq 0 ] && return 1
+  if [ "$MUSICAS_ORDEM" = "sequencial" ]; then
+    ordem=("${arquivos[@]}")                    # em ordem de nome, repetindo
+  else
+    # Aleatório: sorteia de novo a cada volta (muitas voltas já na lista, o ffmpeg
+    # repete a lista inteira só depois de dias) e evita repetir a mesma música
+    # na virada de uma volta para a outra.
+    ordem=()
+    for rodada in $(seq 1 "$(( 2000 / ${#arquivos[@]} + 1 ))"); do
+      mapfile -t volta < <(printf '%s\n' "${arquivos[@]}" | shuf)
+      if [ "${#volta[@]}" -gt 1 ] && [ "${volta[0]}" = "$ultima" ]; then
+        volta=("${volta[@]:1}" "${volta[0]}")
+      fi
+      ordem+=("${volta[@]}")
+      ultima="${volta[-1]}"
     done
-  [ -s "$PLAYLIST" ]
+  fi
+  for arq in "${ordem[@]}"; do
+    printf "file '%s'\n" "${arq//\'/\'\\\'\'}" >> "$PLAYLIST"
+  done
+  MUSICAS_QTD="${#arquivos[@]}"
 }
 baixar_musicas
 
@@ -146,7 +166,7 @@ transmitir() {
                   -thread_queue_size 1024 -f pulse -i live.monitor)
   local filtro formato="aresample=async=1,aformat=sample_rates=44100:channel_layouts=stereo"
   if montar_playlist; then
-    log "músicas de fundo: $(wc -l < "$PLAYLIST") arquivo(s), volume $MUSICA_VOLUME"
+    log "músicas de fundo: $MUSICAS_QTD arquivo(s), ordem $MUSICAS_ORDEM, volume $MUSICA_VOLUME"
     entradas+=(-re -stream_loop -1 -f concat -safe 0 -i "$PLAYLIST")
     if [ "$ABAIXAR_MUSICA" = "1" ]; then
       # A voz (som da página) comanda um compressor na música: quando alguém fala, a música abaixa.
