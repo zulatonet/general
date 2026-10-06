@@ -45,7 +45,9 @@ async function listarRecursos(ano: number): Promise<RecursoCkan[]> {
 function recursoEhDaUf(recurso: RecursoCkan, uf: string): boolean {
   // Os nomes são tipo "SE - Boletim de Urna - Primeiro turno - 05.10.2022".
   const sigla = recurso.name.trim().slice(0, 2).toUpperCase();
-  return sigla === uf && /boletim de urna/i.test(recurso.name) && recurso.format?.toUpperCase() === "ZIP";
+  // Pega só o 1º turno por padrão (o 2º turno só existe se houve 2º turno
+  // de Presidente; dá pra estender depois se for preciso).
+  return sigla === uf && /boletim de urna/i.test(recurso.name) && /primeiro turno/i.test(recurso.name);
 }
 
 async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {

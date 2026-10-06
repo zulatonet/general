@@ -20,14 +20,20 @@ async function main() {
   const dados = await (await fetch(url)).json();
   if (!dados.success) throw new Error(JSON.stringify(dados.error));
 
-  const recurso = (dados.result.resources ?? []).find(
-    (r: { name: string; format: string }) =>
-      r.name.trim().slice(0, 2).toUpperCase() === uf && r.format?.toUpperCase() === "ZIP"
+  type Recurso = { name: string; format: string; url: string };
+  const todos = (dados.result.resources ?? []) as Recurso[];
+
+  const recurso = todos.find(
+    (r) => r.name.trim().slice(0, 2).toUpperCase() === uf && /boletim de urna/i.test(r.name) && /primeiro turno/i.test(r.name)
   );
   if (!recurso) {
-    console.log("Recursos disponíveis:", dados.result.resources.map((r: { name: string }) => r.name));
-    throw new Error(`Não achei ZIP da UF ${uf}. Veja a lista acima e ajuste o filtro se o nome mudou.`);
+    console.log(
+      "Recursos dessa UF (todos, pra eu ver o formato real):",
+      todos.filter((r) => r.name.trim().slice(0, 2).toUpperCase() === uf).map((r) => ({ name: r.name, format: r.format, url: r.url }))
+    );
+    throw new Error(`Não achei "Boletim de Urna - Primeiro turno" da UF ${uf}. Veja a lista acima.`);
   }
+  console.log(`Recurso achado: ${recurso.name} (format=${recurso.format})`);
 
   console.log(`Baixando ${recurso.name}...`);
   const buffer = Buffer.from(await (await fetch(recurso.url)).arrayBuffer());
