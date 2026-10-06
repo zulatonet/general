@@ -64,8 +64,12 @@ npm run inspecionar:bu -- 2022 SP
 
 Isso baixa só o recurso de uma UF, mostra a lista de arquivos dentro do
 zip, o cabeçalho real do CSV e tenta extrair os votos de uma seção —
-confira se os números batem. Se não bater (ou der erro de "coluna não
-encontrada"), ajuste o mapa `COLUNAS` em `src/lib/parser-bu-csv.ts`.
+confira se os números batem. As colunas já foram confirmadas contra o
+cabeçalho real do CSV de SP/2022 (incluindo `DS_CARGO_PERGUNTA` — não
+`DS_CARGO`, que era o meu primeiro palpite). Se um ano futuro mudar o
+layout, o mesmo comando mostra o cabeçalho real e o erro aponta
+exatamente qual coluna ajustar no mapa `COLUNAS` em
+`src/lib/parser-bu-csv.ts`.
 
 **Estados grandes passam de 800 MB descompactados** (o CSV tem linha pra
 todos os cargos, não só Presidente) — por isso a leitura é em streaming

@@ -10,10 +10,10 @@
  * linhas já filtradas de Presidente, agrupadas por seção — isso sim cabe
  * tranquilo (são bem menos linhas que o total).
  *
- * As colunas abaixo (SG_UF, NR_ZONA, NR_SECAO, DS_CARGO, NR_VOTAVEL,
- * QT_VOTOS...) são o layout público mais comum nesse tipo de dataset do
- * TSE. `npm run inspecionar:bu` imprime o cabeçalho real; se algum nome
- * de coluna não bater, ajuste o mapa COLUNAS abaixo.
+ * Colunas confirmadas contra o cabeçalho real do CSV de SP/2022 (via
+ * `npm run inspecionar:bu`) — se o TSE mudar o layout em algum ano, o
+ * mesmo comando mostra o cabeçalho real e o erro abaixo aponta exatamente
+ * qual nome ajustar no mapa COLUNAS.
  */
 import { createHash } from "crypto";
 import type { BuNormalizado } from "./tipos";
@@ -24,8 +24,9 @@ const COLUNAS = {
   municipio: ["NM_MUNICIPIO"],
   zona: ["NR_ZONA"],
   secao: ["NR_SECAO"],
-  cargo: ["DS_CARGO"],
+  cargo: ["DS_CARGO_PERGUNTA"],
   codCargo: ["CD_CARGO_PERGUNTA"],
+  tipoVotavel: ["DS_TIPO_VOTAVEL"],
   numeroVotavel: ["NR_VOTAVEL"],
   nomeVotavel: ["NM_VOTAVEL"],
   votos: ["QT_VOTOS"],
@@ -163,15 +164,19 @@ export function criarProcessadorCsvBu(fonteUrl: string, ano: number) {
     const acumulado = porSecao.get(chave)!;
 
     const nomeVotavel = (campos[idx.nomeVotavel] ?? "").toUpperCase();
+    const tipoVotavel = (campos[idx.tipoVotavel] ?? "").toUpperCase();
     const numeroVotavel = campos[idx.numeroVotavel] ?? "";
     const qtd = Number(campos[idx.votos] ?? "0");
     if (Number.isNaN(qtd)) return;
 
-    const chaveVoto = NOMES_BRANCO.includes(nomeVotavel)
-      ? "branco"
-      : NOMES_NULO.includes(nomeVotavel)
-        ? "nulo"
-        : numeroVotavel || nomeVotavel;
+    // DS_TIPO_VOTAVEL é o sinal mais confiável (é literalmente pra isso
+    // que a coluna existe); o nome do votável é o reforço/alternativa.
+    const chaveVoto =
+      tipoVotavel.includes("BRANCO") || NOMES_BRANCO.includes(nomeVotavel)
+        ? "branco"
+        : tipoVotavel.includes("NULO") || NOMES_NULO.includes(nomeVotavel)
+          ? "nulo"
+          : numeroVotavel || nomeVotavel;
 
     acumulado.votos[chaveVoto] = (acumulado.votos[chaveVoto] ?? 0) + qtd;
   }
