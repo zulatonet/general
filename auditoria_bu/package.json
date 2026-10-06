@@ -10,10 +10,12 @@
     "postinstall": "prisma generate",
     "coletar": "tsx scripts/baixar-bus.ts",
     "totalizar": "tsx scripts/totalizar.ts",
-    "seed:exemplo": "tsx scripts/seed-exemplo.ts"
+    "seed:exemplo": "tsx scripts/seed-exemplo.ts",
+    "inspecionar:bu": "tsx scripts/inspecionar-bu.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
+    "adm-zip": "^0.6.1",
     "next": "14.2.35",
     "prisma": "6.19.3",
     "react": "^18",
@@ -21,6 +23,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

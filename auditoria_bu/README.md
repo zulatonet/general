@@ -47,24 +47,39 @@ npm run seed:exemplo         # dados fictícios, só para testar a UI
 npm run dev
 ```
 
-## Coleta de dados (pendente de finalizar)
+## Coleta de dados
 
-`scripts/baixar-bus.ts` é um **esqueleto**: não consegui confirmar os
-endpoints exatos do catálogo de dados abertos do TSE nesta sessão (acesso
-bloqueado pela rede do ambiente). Antes de usar em produção:
+`scripts/baixar-bus.ts` já é uma implementação real: pergunta pro catálogo
+CKAN de dados abertos do TSE (API pública, sem chave) os recursos do pacote
+`resultados-<ano>-boletim-de-urna`, baixa o ZIP de cada UF e extrai os JSONs
+por seção (`p<pleito>-<uf>-m<município>-z<zona>-s<seção>.json`), filtrando
+só os votos de Presidente.
 
-1. Abra `dadosabertos.tse.jus.br` e confirme o pacote de BUs do ano desejado
-   (é um catálogo CKAN).
-2. Verifique o formato disponível — `.bu` binário (ASN.1, assinado) ou um
-   espelho em JSON/CSV.
-3. Complete `listarArquivosDaUf` e `baixarEConverter` no script.
-4. Se for o `.bu` binário, implemente o parser ASN.1 em
-   `src/lib/parser-bu.ts` e teste campo a campo contra um BU que você já
-   conhece o resultado — essa é a parte mais fácil de acertar por fora e
-   errar os números por dentro.
+**Antes de rodar a coleta completa**, valide com um arquivo de exemplo:
 
-Depois de rodar a coleta, rode `npm run totalizar` (ou agende via cron) para
-atualizar os totais exibidos na home.
+```bash
+npm run inspecionar:bu -- 2022 SP
+```
+
+Isso baixa só um ZIP, mostra o JSON cru de uma seção na tela e tenta
+extrair os votos — confira se os números batem com o que apareceu. Se não
+bater (ou se der erro), ajuste `acharCargoPresidente` e
+`extrairVotosDoCargo` em `src/lib/parser-bu-json.ts`: eu não consegui
+testar contra um arquivo real nesta sessão (acesso a `dadosabertos.tse.jus.br`
+bloqueado pela rede do ambiente onde foi desenvolvido), então a extração de
+votos usa os nomes de campo mais prováveis — mas pode precisar de ajuste
+fino. O nome do arquivo (uf/município/zona/seção) é confiável, só o
+conteúdo interno do JSON (cargo/candidato/votos) é que precisa validação.
+
+Depois de confirmar, rode a coleta completa:
+
+```bash
+npm run coletar -- 2022
+npm run totalizar -- 2022
+```
+
+Agende os dois via cron: `coletar` a cada 5 min no dia da eleição (ou 1x/dia
+fora do período eleitoral), `totalizar` logo depois de cada coleta.
 
 ## Variáveis de ambiente
 
