@@ -16,6 +16,12 @@
  *   - Rode primeiro `npm run inspecionar:bu -- <ano> <UF>` numa UF pra
  *     conferir se as colunas batem com o mapa em src/lib/parser-bu-csv.ts.
  *     Se não bater, ele já lança erro dizendo qual coluna faltou.
+ *
+ * Uso:
+ *   npm run coletar -- 2022          (todas as UFs)
+ *   npm run coletar -- 2022 SP       (só uma UF, pra testar antes de
+ *                                      soltar pra todas — estados grandes
+ *                                      passam de vários GB descompactados)
  */
 import { prisma } from "../src/lib/prisma";
 import { criarProcessadorCsvBu } from "../src/lib/parser-bu-csv";
@@ -95,13 +101,19 @@ async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {
 
 async function main() {
   const ano = Number(process.argv[2] ?? new Date().getFullYear());
-  console.log(`Coletando BUs de ${ano}...`);
+  const ufUnica = process.argv[3]?.toUpperCase();
+  console.log(`Coletando BUs de ${ano}${ufUnica ? ` (só ${ufUnica})` : ""}...`);
 
   const recursos = await listarRecursos(ano);
   console.log(`${recursos.length} recursos encontrados no pacote.`);
 
-  for (const uf of UFS) {
-    await processarUf(uf, ano, recursos);
+  if (ufUnica) {
+    if (!UFS.includes(ufUnica)) throw new Error(`UF inválida: ${ufUnica}`);
+    await processarUf(ufUnica, ano, recursos);
+  } else {
+    for (const uf of UFS) {
+      await processarUf(uf, ano, recursos);
+    }
   }
 
   console.log("Coleta concluída.");
