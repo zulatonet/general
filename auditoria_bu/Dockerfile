@@ -31,4 +31,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 8080) + '/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["sh", "-c", "npx prisma migrate deploy && npx next start -p 8080"]
+CMD ["sh", "-c", "for i in $(seq 1 10); do npx prisma migrate deploy && break; echo 'banco ainda não respondeu, tentando de novo em 3s...'; sleep 3; done && npx next start -p 8080"]
