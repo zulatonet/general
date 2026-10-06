@@ -65,13 +65,13 @@ npm run inspecionar:bu -- 2022 SP
 Isso baixa só o recurso de uma UF, mostra a lista de arquivos dentro do
 zip, o cabeçalho real do CSV e tenta extrair os votos de uma seção —
 confira se os números batem. Se não bater (ou der erro de "coluna não
-encontrada"), ajuste o mapa `COLUNAS` em `src/lib/parser-bu-csv.ts`: o
-nome da coluna no TSE pode ter uma variação que eu não previ. Eu validei a
-estrutura (pacote CKAN, nome dos recursos, formato CSV dentro de zip) por
-busca, mas não baixei um arquivo completo pra conferir todos os nomes de
-coluna com 100% de certeza nesta sessão (acesso a `dadosabertos.tse.jus.br`
-bloqueado pela rede do ambiente onde foi desenvolvido) — por isso o parser
-lança erro claro em vez de salvar número errado quando uma coluna não bate.
+encontrada"), ajuste o mapa `COLUNAS` em `src/lib/parser-bu-csv.ts`.
+
+**Estados grandes passam de 800 MB descompactados** (o CSV tem linha pra
+todos os cargos, não só Presidente) — por isso a leitura é em streaming
+(`src/lib/zip-csv-stream.ts`): o zip nunca é descompactado inteiro na
+memória, só a linha atual é processada por vez, e a coleta grava em lotes
+de 500 seções por transação.
 
 Depois de confirmar, rode a coleta completa:
 

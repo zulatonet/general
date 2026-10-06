@@ -15,18 +15,18 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
-    "adm-zip": "^0.6.1",
     "next": "14.2.35",
     "prisma": "6.19.3",
     "react": "^18",
     "react-dom": "^18",
+    "unzipper": "^0.12.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.8",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/unzipper": "^0.10.11",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "postcss": "^8",

@@ -1,25 +1,25 @@
 /**
  * Coletor de Boletins de Urna do TSE.
  *
- * Como funciona (confirmado rodando contra o catálogo real — ver
- * src/lib/parser-bu-csv.ts pro detalhe do que é certeza e o que ainda
- * precisa validação final de coluna por coluna):
+ * Como funciona:
  *   1. Pergunta pro catálogo CKAN de dados abertos do TSE (API pública,
  *      sem chave) quais recursos existem pro pacote
  *      "resultados-<ano>-boletim-de-urna".
  *   2. Pra cada UF, baixa o recurso "Boletim de Urna - Primeiro turno"
- *      (um .zip contendo um .csv com uma linha por candidato/seção).
- *   3. Filtra só as linhas do cargo Presidente, agrupa por seção e
- *      salva/atualiza no banco.
+ *      (um .zip contendo um .csv com uma linha por candidato/seção —
+ *      estados grandes passam de 800 MB descompactado).
+ *   3. Lê o CSV em STREAMING (nunca carrega o arquivo inteiro
+ *      descompactado na memória), filtra só as linhas do cargo
+ *      Presidente, agrupa por seção e salva/atualiza no banco.
  *
  * IMPORTANTE antes de rodar isto a sério:
  *   - Rode primeiro `npm run inspecionar:bu -- <ano> <UF>` numa UF pra
  *     conferir se as colunas batem com o mapa em src/lib/parser-bu-csv.ts.
  *     Se não bater, ele já lança erro dizendo qual coluna faltou.
  */
-import AdmZip from "adm-zip";
 import { prisma } from "../src/lib/prisma";
-import { parsearCsvBu } from "../src/lib/parser-bu-csv";
+import { criarProcessadorCsvBu } from "../src/lib/parser-bu-csv";
+import { linhasCsvDoZip } from "../src/lib/zip-csv-stream";
 
 const CKAN_BASE = process.env.TSE_CKAN_BASE ?? "https://dadosabertos.tse.jus.br";
 const UFS = [
@@ -47,18 +47,6 @@ function recursoEhDaUf(recurso: RecursoCkan, uf: string): boolean {
   return sigla === uf && /boletim de urna/i.test(recurso.name) && /primeiro turno/i.test(recurso.name);
 }
 
-function extrairCsvDoRecurso(buffer: Buffer): string {
-  // O campo "format" do catálogo nem sempre reflete o content-type real —
-  // detecta pela assinatura do zip em vez de confiar só nisso.
-  if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
-    const zip = new AdmZip(buffer);
-    const csv = zip.getEntries().find((e) => /\.csv$/i.test(e.entryName));
-    if (!csv) throw new Error("Nenhum .csv dentro do zip.");
-    return csv.getData().toString("latin1"); // TSE costuma publicar em Latin-1/ISO-8859-1
-  }
-  return buffer.toString("latin1");
-}
-
 async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {
   const recurso = recursos.find((r) => recursoEhDaUf(r, uf));
   if (!recurso) {
@@ -74,24 +62,35 @@ async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {
   }
   const buffer = Buffer.from(await r.arrayBuffer());
 
-  let bus;
+  const processador = criarProcessadorCsvBu(recurso.url, ano);
   try {
-    bus = parsearCsvBu(extrairCsvDoRecurso(buffer), recurso.url, ano);
+    for await (const linha of linhasCsvDoZip(buffer)) {
+      processador.linha(linha);
+    }
   } catch (err) {
-    console.log(`  ${uf}: erro ao parsear — ${(err as Error).message}`);
+    console.log(`  ${uf}: erro ao processar — ${(err as Error).message}`);
     return;
   }
 
+  const bus = processador.finalizar();
   let salvos = 0;
-  for (const bu of bus) {
-    await prisma.buDigital.upsert({
-      where: { uf_zona_secao_ano: { uf: bu.uf, zona: bu.zona, secao: bu.secao, ano: bu.ano } },
-      create: { ...bu, dataBu: new Date(bu.dataBu) },
-      update: { votos: bu.votos, totalVotos: bu.totalVotos, hashBu: bu.hashBu },
-    });
-    salvos++;
+  // Grava em lotes (uma transação a cada 500) em vez de uma promise por
+  // vez — mais rápido e não deixa a conexão aberta tempo demais.
+  const TAMANHO_LOTE = 500;
+  for (let i = 0; i < bus.length; i += TAMANHO_LOTE) {
+    const lote = bus.slice(i, i + TAMANHO_LOTE);
+    await prisma.$transaction(
+      lote.map((bu) =>
+        prisma.buDigital.upsert({
+          where: { uf_zona_secao_ano: { uf: bu.uf, zona: bu.zona, secao: bu.secao, ano: bu.ano } },
+          create: { ...bu, dataBu: new Date(bu.dataBu) },
+          update: { votos: bu.votos, totalVotos: bu.totalVotos, hashBu: bu.hashBu },
+        })
+      )
+    );
+    salvos += lote.length;
   }
-  console.log(`  ${uf}: ${salvos} seções salvas.`);
+  console.log(`  ${uf}: ${salvos} seções salvas (de ${processador.linhasProcessadas} linhas lidas no CSV).`);
 }
 
 async function main() {
