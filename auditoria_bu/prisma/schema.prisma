@@ -1,0 +1,99 @@
+// Schema da Auditoria Cidadã de BUs.
+//
+// Princípio de design (importante, não mude sem pensar de novo nas
+// consequências): este sistema é um ESPELHO dos dados públicos do TSE,
+// seção por seção — nunca uma "apuração paralela" e nunca um contador
+// público de denúncia não verificada. Ver README.md > "Por que não tem
+// ranking nem contador de divergência".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Um Boletim de Urna digital, exatamente como baixado do TSE, por seção.
+// É ISSO que aparece na página de consulta — nunca um valor somado.
+model BuDigital {
+  id           String   @id @default(cuid())
+  uf           String
+  municipio    String
+  municipioCod String
+  zona         String
+  secao        String
+  hashBu       String   @unique
+  dataBu       DateTime
+  votos        Json // { "13": 150, "22": 120, "branco": 5, "nulo": 3 }
+  totalVotos   Int
+  fonteUrl     String // link direto pro arquivo .bu/.json de origem no TSE
+  ano          Int // 2022, 2024, 2026...
+  createdAt    DateTime @default(now())
+
+  verificacoes Verificacao[]
+
+  @@unique([uf, zona, secao, ano])
+  @@index([uf, municipio])
+}
+
+// Totais oficiais do TSE, pré-calculados por cron para não pesar a consulta.
+// Exibidos sempre com o rótulo "dados oficiais do TSE" — nunca como uma
+// contagem independente/alternativa.
+model ApuracaoOficial {
+  id        String @id @default(cuid())
+  nivel     String // "MUNICIPIO" | "ESTADO" | "NACIONAL"
+  // "" (string vazia) quando não se aplica (ex.: uf="" no nível NACIONAL).
+  // Evita NULL em chave composta, que a maioria dos bancos trata como
+  // "sempre distinto" e quebraria a unicidade.
+  uf        String @default("")
+  municipio String @default("")
+  ano       Int
+  candidato  String
+  legenda    String
+  totalVotos Int
+  updatedAt  DateTime @updatedAt
+
+  @@unique([nivel, uf, municipio, ano, candidato])
+  @@index([nivel, uf, ano])
+}
+
+// Confirmação pública: "conferi meu BU físico e bate com o digital".
+// Esse contador é seguro de mostrar publicamente: só soma confirmações,
+// nunca acusações, então não tem como virar "prova" de fraude.
+model Verificacao {
+  id          String    @id @default(cuid())
+  buDigitalId String
+  buDigital   BuDigital @relation(fields: [buDigitalId], references: [id])
+  criadoEm    DateTime  @default(now())
+  // impressão anônima do navegador (hash), só para limitar 1 confirmação
+  // por seção/dispositivo — não identifica a pessoa.
+  fingerprint String
+
+  @@unique([buDigitalId, fingerprint])
+  @@index([buDigitalId])
+}
+
+// Relato de divergência. NUNCA public por padrão — fica "PENDENTE" até
+// alguém da moderação revisar a evidência anexada e decidir. Não existe
+// contador público somando "PENDENTE"; só o que foi "CONFIRMADA" entra
+// em qualquer estatística exibida, e mesmo assim sem formar ranking.
+model RelatoDivergencia {
+  id          String   @id @default(cuid())
+  uf          String
+  zona        String
+  secao       String
+  ano         Int
+  status      String   @default("PENDENTE") // PENDENTE | CONFIRMADA | REJEITADA
+  // URL de uma foto do BU físico anexada como evidência (armazenamento
+  // privado, nunca público — ver README sobre LGPD e retenção).
+  evidenciaUrl String?
+  fingerprint String
+  revisadoPor String?
+  revisadoEm  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([uf, zona, secao, ano])
+  @@index([status])
+}

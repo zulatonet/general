@@ -9,6 +9,7 @@ um serviço no **Easypanel**.
 |---|---|---|---|---|
 | [`chat_simples/`](chat_simples/) | `chat_simples` | Dockerfile | 8080 | **SalaVip**: chat em tempo real (aiohttp + PostgreSQL) em https://chat.salavip.live |
 | [`transmissor_live/`](transmissor_live/) | `transmissor_live` | Dockerfile | — | Transmite a página da live do SalaVip 24h para o YouTube (Chromium + ffmpeg), com músicas de fundo |
+| [`auditoria_bu/`](auditoria_bu/) | `auditoria_bu` | Dockerfile | 8080 | Consulta pública ao Boletim de Urna digital do TSE por seção, para o cidadão comparar com a cópia física |
 
 ## Como apontar uma pasta no Easypanel
 
