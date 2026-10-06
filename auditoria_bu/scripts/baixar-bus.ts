@@ -1,28 +1,25 @@
 /**
  * Coletor de Boletins de Urna do TSE.
  *
- * Como funciona (confirmado via busca — ver src/lib/parser-bu-json.ts pro
- * detalhe do que é certeza e o que precisa validação):
+ * Como funciona (confirmado rodando contra o catálogo real — ver
+ * src/lib/parser-bu-csv.ts pro detalhe do que é certeza e o que ainda
+ * precisa validação final de coluna por coluna):
  *   1. Pergunta pro catálogo CKAN de dados abertos do TSE (API pública,
  *      sem chave) quais recursos existem pro pacote
  *      "resultados-<ano>-boletim-de-urna".
- *   2. Pra cada UF, baixa o ZIP do 1º turno (e do 2º turno, se existir).
- *   3. Dentro do ZIP tem um JSON por seção, nomeado
- *      p<pleito>-<uf>-m<município>-z<zona>-s<seção>.json.
- *   4. Converte cada um pra BuNormalizado (só os votos de Presidente) e
+ *   2. Pra cada UF, baixa o recurso "Boletim de Urna - Primeiro turno"
+ *      (um .zip contendo um .csv com uma linha por candidato/seção).
+ *   3. Filtra só as linhas do cargo Presidente, agrupa por seção e
  *      salva/atualiza no banco.
  *
  * IMPORTANTE antes de rodar isto a sério:
- *   - Rode primeiro `npm run inspecionar:bu -- <ano> <UF>` pra baixar só
- *     UM arquivo de exemplo e ver a estrutura real na tela. Se
- *     `acharCargoPresidente`/`extrairVotosDoCargo` em
- *     src/lib/parser-bu-json.ts não baterem com o que você vir, ajuste
- *     antes de rodar a coleta completa — ela vai falhar alto (lança
- *     erro) em vez de salvar dado errado, mas é melhor confirmar antes.
+ *   - Rode primeiro `npm run inspecionar:bu -- <ano> <UF>` numa UF pra
+ *     conferir se as colunas batem com o mapa em src/lib/parser-bu-csv.ts.
+ *     Se não bater, ele já lança erro dizendo qual coluna faltou.
  */
 import AdmZip from "adm-zip";
 import { prisma } from "../src/lib/prisma";
-import { parsearBuJson, extrairContextoDoNome } from "../src/lib/parser-bu-json";
+import { parsearCsvBu } from "../src/lib/parser-bu-csv";
 
 const CKAN_BASE = process.env.TSE_CKAN_BASE ?? "https://dadosabertos.tse.jus.br";
 const UFS = [
@@ -44,56 +41,57 @@ async function listarRecursos(ano: number): Promise<RecursoCkan[]> {
 
 function recursoEhDaUf(recurso: RecursoCkan, uf: string): boolean {
   // Os nomes são tipo "SE - Boletim de Urna - Primeiro turno - 05.10.2022".
-  const sigla = recurso.name.trim().slice(0, 2).toUpperCase();
   // Pega só o 1º turno por padrão (o 2º turno só existe se houve 2º turno
   // de Presidente; dá pra estender depois se for preciso).
+  const sigla = recurso.name.trim().slice(0, 2).toUpperCase();
   return sigla === uf && /boletim de urna/i.test(recurso.name) && /primeiro turno/i.test(recurso.name);
 }
 
+function extrairCsvDoRecurso(buffer: Buffer): string {
+  // O campo "format" do catálogo nem sempre reflete o content-type real —
+  // detecta pela assinatura do zip em vez de confiar só nisso.
+  if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+    const zip = new AdmZip(buffer);
+    const csv = zip.getEntries().find((e) => /\.csv$/i.test(e.entryName));
+    if (!csv) throw new Error("Nenhum .csv dentro do zip.");
+    return csv.getData().toString("latin1"); // TSE costuma publicar em Latin-1/ISO-8859-1
+  }
+  return buffer.toString("latin1");
+}
+
 async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {
-  const doUf = recursos.filter((r) => recursoEhDaUf(r, uf));
-  if (doUf.length === 0) {
-    console.log(`  ${uf}: nenhum recurso ZIP encontrado (nome pode ter mudado — confira manualmente).`);
+  const recurso = recursos.find((r) => recursoEhDaUf(r, uf));
+  if (!recurso) {
+    console.log(`  ${uf}: nenhum recurso encontrado (nome pode ter mudado — confira manualmente).`);
     return;
   }
 
-  for (const recurso of doUf) {
-    console.log(`  ${uf}: baixando ${recurso.name}...`);
-    const r = await fetch(recurso.url);
-    if (!r.ok) {
-      console.log(`  ${uf}: falhou (${r.status}) em ${recurso.url}`);
-      continue;
-    }
-    const buffer = Buffer.from(await r.arrayBuffer());
-    const zip = new AdmZip(buffer);
-
-    let salvos = 0;
-    let erros = 0;
-    for (const entrada of zip.getEntries()) {
-      if (!entrada.entryName.endsWith(".json")) continue;
-      const ctx = extrairContextoDoNome(entrada.entryName.split("/").pop() ?? "");
-      if (!ctx) continue;
-
-      try {
-        const bu = parsearBuJson(entrada.getData().toString("utf-8"), {
-          ...ctx,
-          municipio: ctx.municipioCod, // TODO: resolver nome do município (tabela de municípios do TSE)
-          ano,
-          fonteUrl: recurso.url,
-        });
-        await prisma.buDigital.upsert({
-          where: { uf_zona_secao_ano: { uf: bu.uf, zona: bu.zona, secao: bu.secao, ano: bu.ano } },
-          create: { ...bu, dataBu: new Date(bu.dataBu) },
-          update: { votos: bu.votos, totalVotos: bu.totalVotos, hashBu: bu.hashBu },
-        });
-        salvos++;
-      } catch (err) {
-        erros++;
-        if (erros <= 3) console.log(`    erro: ${(err as Error).message}`);
-      }
-    }
-    console.log(`  ${uf}: ${salvos} seções salvas, ${erros} com erro.`);
+  console.log(`  ${uf}: baixando ${recurso.name}...`);
+  const r = await fetch(recurso.url);
+  if (!r.ok) {
+    console.log(`  ${uf}: falhou (${r.status}) em ${recurso.url}`);
+    return;
   }
+  const buffer = Buffer.from(await r.arrayBuffer());
+
+  let bus;
+  try {
+    bus = parsearCsvBu(extrairCsvDoRecurso(buffer), recurso.url, ano);
+  } catch (err) {
+    console.log(`  ${uf}: erro ao parsear — ${(err as Error).message}`);
+    return;
+  }
+
+  let salvos = 0;
+  for (const bu of bus) {
+    await prisma.buDigital.upsert({
+      where: { uf_zona_secao_ano: { uf: bu.uf, zona: bu.zona, secao: bu.secao, ano: bu.ano } },
+      create: { ...bu, dataBu: new Date(bu.dataBu) },
+      update: { votos: bu.votos, totalVotos: bu.totalVotos, hashBu: bu.hashBu },
+    });
+    salvos++;
+  }
+  console.log(`  ${uf}: ${salvos} seções salvas.`);
 }
 
 async function main() {

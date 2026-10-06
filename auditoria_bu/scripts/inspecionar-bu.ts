@@ -1,13 +1,13 @@
 /**
- * Baixa só UM arquivo de exemplo (não salva nada no banco) e imprime a
+ * Baixa só o recurso de UMA UF (não salva nada no banco) e imprime a
  * estrutura crua na tela — rode isto ANTES da coleta completa pra
- * confirmar se acharCargoPresidente/extrairVotosDoCargo (em
- * src/lib/parser-bu-json.ts) batem com o formato real.
+ * confirmar se o mapa de colunas em src/lib/parser-bu-csv.ts bate com o
+ * CSV real do TSE.
  *
  * Uso: npm run inspecionar:bu -- 2022 SP
  */
 import AdmZip from "adm-zip";
-import { parsearBuJson, extrairContextoDoNome } from "../src/lib/parser-bu-json";
+import { parsearCsvBu } from "../src/lib/parser-bu-csv";
 
 const CKAN_BASE = process.env.TSE_CKAN_BASE ?? "https://dadosabertos.tse.jus.br";
 
@@ -28,35 +28,48 @@ async function main() {
   );
   if (!recurso) {
     console.log(
-      "Recursos dessa UF (todos, pra eu ver o formato real):",
+      "Recursos dessa UF:",
       todos.filter((r) => r.name.trim().slice(0, 2).toUpperCase() === uf).map((r) => ({ name: r.name, format: r.format, url: r.url }))
     );
     throw new Error(`Não achei "Boletim de Urna - Primeiro turno" da UF ${uf}. Veja a lista acima.`);
   }
-  console.log(`Recurso achado: ${recurso.name} (format=${recurso.format})`);
+  console.log(`Recurso achado: ${recurso.name} (format=${recurso.format})\nURL: ${recurso.url}`);
 
-  console.log(`Baixando ${recurso.name}...`);
+  console.log(`Baixando...`);
   const buffer = Buffer.from(await (await fetch(recurso.url)).arrayBuffer());
-  const zip = new AdmZip(buffer);
-  const primeiroJson = zip.getEntries().find((e) => e.entryName.endsWith(".json"));
-  if (!primeiroJson) throw new Error("Nenhum .json dentro do zip — o formato pode ser outro (talvez .bu binário).");
 
-  const conteudo = primeiroJson.getData().toString("utf-8");
-  console.log(`\n=== Arquivo: ${primeiroJson.entryName} ===`);
-  console.log(conteudo.slice(0, 4000));
+  let conteudoCsv: string;
+  // Alguns recursos podem vir como .zip de verdade, outros como .csv direto
+  // (o campo "format" nem sempre reflete o content-type real). Detecta pela
+  // assinatura do zip (PK\x03\x04) em vez de confiar só na extensão da URL.
+  if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+    const zip = new AdmZip(buffer);
+    const entradas = zip.getEntries();
+    console.log(
+      "\n=== Arquivos dentro do zip ===",
+      entradas.map((e) => ({ nome: e.entryName, bytes: e.header.size }))
+    );
+    const csv = entradas.find((e) => /\.csv$/i.test(e.entryName));
+    if (!csv) throw new Error("Nenhum .csv dentro do zip — confira a lista de arquivos acima pra ver o que tem.");
+    console.log(`\nUsando: ${csv.entryName}`);
+    conteudoCsv = csv.getData().toString("latin1"); // TSE costuma publicar em Latin-1/ISO-8859-1
+  } else {
+    console.log("\n(resposta não é um .zip — tratando como CSV direto)");
+    conteudoCsv = buffer.toString("latin1");
+  }
 
-  const ctx = extrairContextoDoNome(primeiroJson.entryName.split("/").pop() ?? "");
-  console.log("\n=== Contexto extraído do nome do arquivo ===", ctx);
+  const linhas = conteudoCsv.split(/\r?\n/).filter((l) => l.trim());
+  console.log(`\n=== Cabeçalho (linha 1) ===\n${linhas[0]}`);
+  console.log(`\n=== Primeira linha de dados (linha 2) ===\n${linhas[1]}`);
+  console.log(`\nTotal de linhas: ${linhas.length}`);
 
-  if (ctx) {
-    try {
-      const bu = parsearBuJson(conteudo, { ...ctx, municipio: ctx.municipioCod, ano, fonteUrl: recurso.url });
-      console.log("\n=== Parser conseguiu extrair (confira se os números batem com o arquivo acima) ===");
-      console.log(bu);
-    } catch (err) {
-      console.log("\n=== O parser NÃO conseguiu extrair — ajuste src/lib/parser-bu-json.ts ===");
-      console.log((err as Error).message);
-    }
+  try {
+    const bus = parsearCsvBu(conteudoCsv, recurso.url, ano);
+    console.log(`\n=== Parser extraiu ${bus.length} seções com votos de Presidente ===`);
+    console.log("Primeiras 3:", bus.slice(0, 3));
+  } catch (err) {
+    console.log("\n=== O parser NÃO conseguiu extrair — ajuste src/lib/parser-bu-csv.ts ===");
+    console.log((err as Error).message);
   }
 }
 
