@@ -1,0 +1,22 @@
+# Segredos
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Bancos locais
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+
+# Sistema/editor
+.DS_Store
+.idea/
+.vscode/

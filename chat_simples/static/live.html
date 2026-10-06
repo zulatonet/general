@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="pt-br" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalaVip — Live</title>
+<style>
+:root {
+  --verde: #22e05a; --verde-escuro: #0b3d1e; --ouro: #ffd54a; --fundo: #03110b; --painel: rgba(6, 22, 14, .88);
+  --borda: rgba(34, 224, 90, .35); --texto: #eafff0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: "Segoe UI", -apple-system, Arial, sans-serif; color: var(--texto);
+  background: radial-gradient(circle at 50% 40%, #07261a 0%, var(--fundo) 70%);
+}
+body.transparente { background: transparent; }
+#palco { position: absolute; inset: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 1.2vh; padding: 1.4vh 1.2vw; }
+
+/* Topo */
+#topo { display: flex; align-items: center; gap: 1.2vw; font-size: 2.1vh; font-weight: 700; }
+.ao-vivo { display: flex; align-items: center; gap: .6vw; background: #d61f2c; color: white; padding: .5vh 1vw; border-radius: 1vh; letter-spacing: .08em; }
+.ao-vivo::before { content: ""; width: 1.2vh; height: 1.2vh; border-radius: 50%; background: white; animation: pulsar 1.2s infinite; }
+@keyframes pulsar { 50% { opacity: .25; } }
+.chip { background: var(--painel); border: 1px solid var(--borda); padding: .5vh 1vw; border-radius: 1vh; white-space: nowrap; }
+.chip b { color: var(--verde); font-variant-numeric: tabular-nums; }
+#topo .site { margin-left: auto; color: var(--verde); font-size: 2.4vh; text-shadow: 0 0 1.2vh rgba(34,224,90,.6); }
+
+/* Área central: tela + chat */
+#area { display: grid; grid-template-columns: 1fr 24vw; gap: 1.2vw; min-height: 0; }
+body.sem-chat #area { grid-template-columns: 1fr; }
+body.sem-chat #chat { display: none; }
+#tela-box { position: relative; min-height: 0; display: flex; align-items: center; justify-content: center; }
+#moldura { position: relative; box-shadow: 0 0 0 .4vh var(--verde), 0 0 4vh rgba(34,224,90,.35); border-radius: .6vh; overflow: hidden; }
+#tela { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+#efeitos { position: absolute; inset: 0; pointer-events: none; }
+.onda { position: absolute; width: 0; height: 0; border-radius: 50%; border: .35vh solid white; transform: translate(-50%, -50%);
+  animation: onda .9s ease-out forwards; box-shadow: 0 0 1vh rgba(255,255,255,.8); }
+@keyframes onda { from { width: 0; height: 0; opacity: 1; } to { width: 7vh; height: 7vh; opacity: 0; } }
+.rotulo { position: absolute; transform: translate(-50%, -160%); background: rgba(0,0,0,.78); color: white; font-size: 1.6vh; font-weight: 700;
+  padding: .2vh .6vw; border-radius: .6vh; white-space: nowrap; animation: subir 1.8s ease-out forwards; border: 1px solid var(--borda); }
+@keyframes subir { 0% { opacity: 0; margin-top: 0; } 12% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; margin-top: -3vh; } }
+
+#chat { background: var(--painel); border: 1px solid var(--borda); border-radius: 1.2vh; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+#chat h3 { font-size: 2vh; padding: 1vh 1vw; border-bottom: 1px solid var(--borda); color: var(--verde); }
+#msgs { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: .8vh; padding: 1vh .8vw; overflow: hidden; }
+.msg { font-size: 1.9vh; line-height: 1.3; animation: entrar .35s ease-out; word-break: break-word; }
+.msg b { color: var(--ouro); }
+.msg.audio { color: #9ff5bb; font-style: italic; }
+@keyframes entrar { from { opacity: 0; transform: translateX(2vw); } to { opacity: 1; transform: none; } }
+
+/* Ranking */
+#ranking { display: flex; align-items: stretch; gap: .8vw; }
+#ranking .titulo { display: flex; align-items: center; font-size: 2.2vh; font-weight: 800; color: var(--ouro); padding: 0 .6vw; white-space: nowrap; }
+#rank-lista { position: relative; flex: 1; display: flex; gap: .7vw; min-width: 0; }
+.card { position: relative; flex: 1; min-width: 0; background: var(--painel); border: 1px solid var(--borda); border-radius: 1.2vh;
+  padding: 1vh .8vw; display: flex; align-items: center; gap: .6vw; transition: transform .6s cubic-bezier(.2,.8,.2,1), background .3s; }
+.card.p1 { border-color: var(--ouro); box-shadow: 0 0 2vh rgba(255,213,74,.35); }
+.card .pos { font-size: 2.6vh; font-weight: 800; }
+.card .nome { flex: 1; min-width: 0; font-size: 2vh; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .pts { font-size: 2.3vh; font-weight: 800; color: var(--verde); font-variant-numeric: tabular-nums; }
+.card.pulou { background: rgba(34,224,90,.25); }
+.mais1 { position: absolute; right: .8vw; top: -1vh; color: var(--ouro); font-weight: 900; font-size: 2.6vh; pointer-events: none;
+  text-shadow: 0 0 1vh rgba(255,213,74,.8); animation: mais1 1.1s ease-out forwards; }
+@keyframes mais1 { from { opacity: 1; transform: translateY(0) scale(1.2); } to { opacity: 0; transform: translateY(-4vh) scale(.9); } }
+.vazio-rank { font-size: 2vh; color: #9ab; align-self: center; }
+
+/* Quem está falando */
+#falando { position: absolute; left: 50%; top: 9vh; transform: translateX(-50%); display: flex; align-items: center; gap: 1vw;
+  background: rgba(0,0,0,.82); border: .3vh solid var(--verde); border-radius: 5vh; padding: 1.2vh 2vw; font-size: 2.6vh; font-weight: 700;
+  box-shadow: 0 0 3vh rgba(34,224,90,.5); animation: aparecer .3s ease-out; z-index: 5; }
+@keyframes aparecer { from { opacity: 0; transform: translate(-50%, -2vh); } }
+#falando b { color: var(--ouro); }
+.barras { display: flex; align-items: flex-end; gap: .3vw; height: 3vh; }
+.barras i { width: .5vw; background: var(--verde); border-radius: .3vh; animation: barra .8s infinite ease-in-out; }
+.barras i:nth-child(2) { animation-delay: .15s; } .barras i:nth-child(3) { animation-delay: .3s; } .barras i:nth-child(4) { animation-delay: .45s; }
+@keyframes barra { 0%, 100% { height: 25%; } 50% { height: 100%; } }
+#fila-audios { font-size: 1.8vh; color: #9ab; font-weight: 400; }
+
+#ativar-som { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.7);
+  font-size: 3vh; cursor: pointer; z-index: 10; text-align: center; }
+#desconectado { position: absolute; right: 1.2vw; bottom: 1vh; background: #7a1d1d; padding: .5vh 1vw; border-radius: 1vh; font-size: 1.6vh; z-index: 6; }
+.escondido { display: none !important; }
+</style>
+</head>
+<body>
+<div id="palco">
+  <header id="topo">
+    <span class="ao-vivo">AO VIVO</span>
+    <span class="chip">🟢 <b id="online">0</b> online</span>
+    <span class="chip">🎨 <b id="hoje">0</b> pixels hoje</span>
+    <span class="chip">🎤 Mande seu áudio: ele toca aqui na live!</span>
+    <span class="site">{{SITE}}</span>
+  </header>
+  <main id="area">
+    <div id="tela-box">
+      <div id="moldura"><canvas id="tela" width="320" height="180"></canvas><div id="efeitos"></div></div>
+    </div>
+    <aside id="chat"><h3>💬 Chat da live</h3><div id="msgs"></div></aside>
+  </main>
+  <footer id="ranking">
+    <div class="titulo">🏆 RANKING</div>
+    <div id="rank-lista"><div class="vazio-rank">Seja o primeiro a pintar! 🎨</div></div>
+  </footer>
+</div>
+<div id="falando" class="escondido">
+  <span class="barras"><i></i><i></i><i></i><i></i></span>
+  <span>🎤 <b id="falando-nome"></b> está falando</span>
+  <span id="fila-audios"></span>
+</div>
+<div id="ativar-som" class="escondido">🔊 Clique aqui para ativar o som da live</div>
+<div id="desconectado" class="escondido">Reconectando…</div>
+<script>
+const params = new URLSearchParams(location.search);
+const CHAVE = params.get("chave") || "";
+const MAX_RANK = Math.max(3, Math.min(10, parseInt(params.get("ranking") || "8", 10) || 8));
+const SOM_PIXEL = params.get("som") !== "0";
+const VOLUME = Math.max(0, Math.min(1, parseFloat(params.get("volume") || "0.35")));
+if (params.get("chat") === "0") document.body.classList.add("sem-chat");
+if (params.get("fundo") === "transparente") document.body.classList.add("transparente");
+
+const el = (id) => document.getElementById(id);
+const canvas = el("tela"), ctx = canvas.getContext("2d");
+let info = null, pixels = null, carregando = false, fila = [];
+let ranking = new Map();   // apelido -> pixels
+let hoje = 0;
+
+// ---------- som ----------
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioCtx();
+const NOTAS = [523, 587, 659, 784, 880, 1047, 1175, 1319];   // pentatônica
+let blipsNoSegundo = 0;
+setInterval(() => { blipsNoSegundo = 0; }, 1000);
+function plim(cor) {
+  if (!SOM_PIXEL || audioCtx.state !== "running" || blipsNoSegundo++ > 10) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = "triangle"; o.frequency.value = NOTAS[cor % NOTAS.length];
+  g.gain.setValueAtTime(VOLUME * 0.5, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+  o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.2);
+}
+function verificarSom() {
+  el("ativar-som").classList.toggle("escondido", audioCtx.state === "running");
+}
+el("ativar-som").onclick = async () => { await audioCtx.resume(); verificarSom(); tocarProximo(); };
+audioCtx.resume().finally(verificarSom);
+setTimeout(verificarSom, 800);
+
+// ---------- tela ----------
+function ajustarTela() {
+  if (!info) return;
+  const box = el("tela-box").getBoundingClientRect();
+  const escala = Math.max(1, Math.floor(Math.min(box.width / info.largura, box.height / info.altura) * 100) / 100);
+  canvas.style.width = info.largura * escala + "px";
+  canvas.style.height = info.altura * escala + "px";
+}
+window.addEventListener("resize", ajustarTela);
+
+function rgb(hex) { return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); }
+function desenharTudo() {
+  const cores = info.paleta.map(rgb);
+  const img = ctx.createImageData(info.largura, info.altura);
+  for (let i = 0; i < pixels.length; i++) {
+    const c = cores[pixels[i]] || cores[0];
+    img.data.set([c[0], c[1], c[2], 255], i * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+async function carregarTela() {
+  carregando = true; fila = [];
+  try {
+    const r = await fetch("/live/tela?chave=" + encodeURIComponent(CHAVE), { cache: "no-store" });
+    pixels = new Uint8Array(await r.arrayBuffer());
+    desenharTudo();
+    fila.forEach(aplicar); fila = [];
+  } finally { carregando = false; }
+}
+function aplicar(lote) {
+  if (carregando || !pixels) { fila.push(lote); return; }
+  for (const [x, y, c] of lote) {
+    pixels[y * info.largura + x] = c;
+    ctx.fillStyle = info.paleta[c];
+    ctx.fillRect(x, y, 1, 1);
+  }
+}
+
+const rotulos = new Map();   // nome -> etiqueta na tela
+function efeitos(lista, total) {
+  hoje += total;
+  el("hoje").textContent = hoje.toLocaleString("pt-BR");
+  const box = el("efeitos");
+  const mostrar = lista.length > 12 ? lista.slice(-6) : lista;   // moderação em massa: sem enxurrada de efeitos
+  const jaRotulado = new Set();
+  for (const [x, y, c, nome] of mostrar) {
+    const left = ((x + 0.5) / info.largura * 100) + "%", top = ((y + 0.5) / info.altura * 100) + "%";
+    const onda = document.createElement("div");
+    onda.className = "onda"; onda.style.left = left; onda.style.top = top;
+    onda.style.borderColor = info.paleta[c];
+    box.appendChild(onda);
+    setTimeout(() => onda.remove(), 1000);
+    if (!jaRotulado.has(nome)) {
+      jaRotulado.add(nome);
+      // Uma etiqueta por pessoa: se já existe, ela pula para o pixel novo.
+      let r = rotulos.get(nome);
+      if (r) { clearTimeout(r.timer); r.el.remove(); }
+      const e = document.createElement("div");
+      e.className = "rotulo"; e.textContent = nome; e.style.left = left; e.style.top = top;
+      box.appendChild(e);
+      rotulos.set(nome, { el: e, timer: setTimeout(() => { e.remove(); rotulos.delete(nome); }, 1900) });
+    }
+    plim(c);
+  }
+}
+
+// ---------- ranking (com animação de troca de posição) ----------
+function renderizarRanking(ganhos = new Map()) {
+  const lista = el("rank-lista");
+  const antes = new Map([...lista.querySelectorAll(".card")].map(c => [c.dataset.nome, c.getBoundingClientRect().left]));
+  const top = [...ranking.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, MAX_RANK);
+  lista.innerHTML = "";
+  if (!top.length) {
+    lista.appendChild(Object.assign(document.createElement("div"), { className: "vazio-rank", textContent: "Seja o primeiro a pintar! 🎨" }));
+    return;
+  }
+  top.forEach(([nome, pts], i) => {
+    const card = document.createElement("div");
+    card.className = "card" + (i === 0 ? " p1" : "");
+    card.dataset.nome = nome;
+    const pos = document.createElement("span"); pos.className = "pos"; pos.textContent = ["🥇", "🥈", "🥉"][i] || (i + 1) + "º";
+    const n = document.createElement("span"); n.className = "nome"; n.textContent = nome;
+    const p = document.createElement("span"); p.className = "pts"; p.textContent = pts.toLocaleString("pt-BR");
+    card.append(pos, n, p);
+    lista.appendChild(card);
+    const ganho = ganhos.get(nome);
+    if (ganho) {
+      card.classList.add("pulou");
+      setTimeout(() => card.classList.remove("pulou"), 400);
+      const m = document.createElement("span"); m.className = "mais1"; m.textContent = "+" + ganho;
+      card.appendChild(m);
+      setTimeout(() => m.remove(), 1200);
+    }
+    // FLIP: começa onde estava e desliza para o lugar novo
+    const x0 = antes.get(nome);
+    if (x0 !== undefined) {
+      const dx = x0 - card.getBoundingClientRect().left;
+      if (Math.abs(dx) > 1) {
+        card.style.transition = "none"; card.style.transform = `translateX(${dx}px)`;
+        requestAnimationFrame(() => requestAnimationFrame(() => { card.style.transition = ""; card.style.transform = ""; }));
+      }
+    }
+  });
+}
+
+// ---------- chat ----------
+function adicionarChat(m) {
+  const msgs = el("msgs");
+  const d = document.createElement("div");
+  d.className = "msg" + (m.audio ? " audio" : "");
+  const b = document.createElement("b"); b.textContent = m.de + ": ";
+  d.append(b, document.createTextNode(m.texto));
+  msgs.appendChild(d);
+  while (msgs.children.length > 14) msgs.firstChild.remove();
+}
+
+// ---------- áudios dos usuários (tocam uma vez) ----------
+const filaAudios = [];
+let tocando = null;
+function atualizarFalando() {
+  el("falando").classList.toggle("escondido", !tocando);
+  if (tocando) {
+    el("falando-nome").textContent = tocando.de;
+    el("fila-audios").textContent = filaAudios.length ? "· mais " + filaAudios.length + " na fila" : "";
+  }
+}
+async function tocarProximo() {
+  if (tocando || !filaAudios.length || audioCtx.state !== "running") return;
+  const item = filaAudios.shift();
+  try {
+    const r = await fetch("/live/audio/" + encodeURIComponent(item.id) + "?chave=" + encodeURIComponent(CHAVE), { cache: "no-store" });
+    if (!r.ok) { tocarProximo(); return; }            // já tocou em outra página ou expirou
+    const url = URL.createObjectURL(await r.blob());
+    const a = new Audio(url);
+    a.volume = 1;
+    tocando = { de: item.de, audio: a, url };
+    atualizarFalando();
+    const fim = () => { if (tocando && tocando.audio === a) { URL.revokeObjectURL(url); tocando = null; atualizarFalando(); setTimeout(tocarProximo, 600); } };
+    a.onended = fim; a.onerror = fim;
+    setTimeout(fim, (item.duracao_ms || 10000) + 4000);   // garantia
+    await a.play();
+  } catch (e) {
+    tocando = null; atualizarFalando(); setTimeout(tocarProximo, 600);
+  }
+}
+function pular() {
+  if (!tocando) return;
+  tocando.audio.pause(); URL.revokeObjectURL(tocando.url); tocando = null; atualizarFalando(); setTimeout(tocarProximo, 400);
+}
+
+// ---------- conexão ----------
+let tentativas = 0;
+function conectar() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/live/ws?chave=" + encodeURIComponent(CHAVE));
+  ws.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    if (d.tipo === "inicio") {
+      tentativas = 0; el("desconectado").classList.add("escondido");
+      info = d.tela; canvas.width = info.largura; canvas.height = info.altura; ajustarTela();
+      carregarTela();
+      ranking = new Map(d.ranking.map(r => [r.apelido, r.pixels]));
+      renderizarRanking();
+      hoje = d.hoje; el("hoje").textContent = hoje.toLocaleString("pt-BR");
+      el("online").textContent = d.online;
+      el("msgs").innerHTML = ""; d.chat.slice(-14).forEach(adicionarChat);
+    } else if (d.tipo === "pixels") aplicar(d.p);
+    else if (d.tipo === "pintores") efeitos(d.p, d.total);
+    else if (d.tipo === "ranking_mais") {
+      const ganhos = new Map();
+      d.itens.forEach(it => { ranking.set(it.apelido, it.pixels); ganhos.set(it.apelido, it.ganho); });
+      renderizarRanking(ganhos);
+    }
+    else if (d.tipo === "online") el("online").textContent = d.n;
+    else if (d.tipo === "live_msg") adicionarChat(d);
+    else if (d.tipo === "live_limpar") el("msgs").innerHTML = "";
+    else if (d.tipo === "live_audio") { if (!filaAudios.some(a => a.id === d.id)) filaAudios.push(d); atualizarFalando(); tocarProximo(); }
+    else if (d.tipo === "live_pular") pular();
+  };
+  ws.onclose = (ev) => {
+    el("desconectado").classList.remove("escondido");
+    if (ev.code === 4003) { el("desconectado").textContent = "Link da live trocado. Atualize o endereço no OBS."; return; }
+    tentativas++;
+    setTimeout(conectar, Math.min(15000, 1000 * 2 ** Math.min(tentativas, 4)));
+  };
+}
+conectar();
+</script>
+</body>
+</html>
