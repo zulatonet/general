@@ -13,4 +13,5 @@ export type BuNormalizado = {
   totalVotos: number;
   fonteUrl: string;
   ano: number;
+  turno: number; // 1 ou 2
 };

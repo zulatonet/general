@@ -8,7 +8,7 @@ async function main() {
   const ano = new Date().getFullYear();
 
   await prisma.buDigital.upsert({
-    where: { uf_zona_secao_ano: { uf: "MG", zona: "0001", secao: "0010", ano } },
+    where: { uf_zona_secao_ano_turno: { uf: "MG", zona: "0001", secao: "0010", ano, turno: 1 } },
     create: {
       uf: "MG",
       municipio: "Manhuaçu",
@@ -21,6 +21,7 @@ async function main() {
       totalVotos: 278,
       fonteUrl: "https://dadosabertos.tse.jus.br/exemplo",
       ano,
+      turno: 1,
     },
     update: {},
   });

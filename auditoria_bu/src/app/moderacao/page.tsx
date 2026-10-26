@@ -8,6 +8,7 @@ type Relato = {
   zona: string;
   secao: string;
   ano: number;
+  turno: number;
   status: string;
   createdAt: string;
 };
@@ -90,7 +91,7 @@ export default function Moderacao() {
         {relatos.map((r) => (
           <li key={r.id} className="flex items-center justify-between py-3">
             <span>
-              {r.uf} · Zona {r.zona} · Seção {r.secao} · {r.ano}
+              {r.uf} · Zona {r.zona} · Seção {r.secao} · {r.ano} · {r.turno}º turno
             </span>
             <span className="flex gap-2">
               <button

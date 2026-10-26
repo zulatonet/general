@@ -5,7 +5,8 @@
  * CSV real do TSE. Lê em streaming (não carrega o CSV inteiro — pode
  * passar de 800 MB descompactado num estado grande).
  *
- * Uso: npm run inspecionar:bu -- 2022 SP
+ * Uso: npm run inspecionar:bu -- 2022 SP       (1º turno, padrão)
+ *      npm run inspecionar:bu -- 2026 MG 2     (2º turno)
  */
 import { listarArquivosZip, linhasCsvDoZip } from "../src/lib/zip-csv-stream";
 import { criarProcessadorCsvBu } from "../src/lib/parser-bu-csv";
@@ -18,6 +19,7 @@ const LIMITE_SECOES = 3;
 async function main() {
   const ano = Number(process.argv[2] ?? new Date().getFullYear());
   const uf = (process.argv[3] ?? "SP").toUpperCase();
+  const turno = Number(process.argv[4] ?? "1");
 
   const url = `${CKAN_BASE}/api/3/action/package_show?id=resultados-${ano}-boletim-de-urna`;
   console.log(`Buscando pacote: ${url}`);
@@ -26,16 +28,17 @@ async function main() {
 
   type Recurso = { name: string; format: string; url: string };
   const todos = (dados.result.resources ?? []) as Recurso[];
+  const nomeTurno = turno === 2 ? "segundo turno" : "primeiro turno";
 
   const recurso = todos.find(
-    (r) => r.name.trim().slice(0, 2).toUpperCase() === uf && /boletim de urna/i.test(r.name) && /primeiro turno/i.test(r.name)
+    (r) => r.name.trim().slice(0, 2).toUpperCase() === uf && /boletim de urna/i.test(r.name) && new RegExp(nomeTurno, "i").test(r.name)
   );
   if (!recurso) {
     console.log(
       "Recursos dessa UF:",
       todos.filter((r) => r.name.trim().slice(0, 2).toUpperCase() === uf).map((r) => ({ name: r.name, format: r.format, url: r.url }))
     );
-    throw new Error(`Não achei "Boletim de Urna - Primeiro turno" da UF ${uf}. Veja a lista acima.`);
+    throw new Error(`Não achei "Boletim de Urna - ${nomeTurno}" da UF ${uf}. Veja a lista acima.`);
   }
   console.log(`Recurso achado: ${recurso.name} (format=${recurso.format})\nURL: ${recurso.url}`);
 

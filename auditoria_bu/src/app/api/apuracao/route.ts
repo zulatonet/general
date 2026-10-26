@@ -10,6 +10,7 @@ export async function GET(req: Request) {
   const uf = searchParams.get("uf")?.toUpperCase() ?? "";
   const municipio = searchParams.get("municipio") ?? "";
   const ano = Number(searchParams.get("ano") ?? new Date().getFullYear());
+  const turno = Number(searchParams.get("turno") ?? "1");
 
   if (!["NACIONAL", "ESTADO", "MUNICIPIO"].includes(nivel)) {
     return Response.json({ erro: "nivel inválido" }, { status: 400 });
@@ -22,7 +23,7 @@ export async function GET(req: Request) {
   }
 
   const linhas = await prisma.apuracaoOficial.findMany({
-    where: { nivel, ano, uf, municipio },
+    where: { nivel, ano, turno, uf, municipio },
     orderBy: { totalVotos: "desc" },
   });
 
@@ -32,6 +33,7 @@ export async function GET(req: Request) {
     uf,
     municipio,
     ano,
+    turno,
     resultados: linhas,
   });
 }

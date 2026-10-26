@@ -24,6 +24,7 @@ const COLUNAS = {
   municipio: ["NM_MUNICIPIO"],
   zona: ["NR_ZONA"],
   secao: ["NR_SECAO"],
+  turno: ["NR_TURNO"],
   cargo: ["DS_CARGO_PERGUNTA"],
   codCargo: ["CD_CARGO_PERGUNTA"],
   tipoVotavel: ["DS_TIPO_VOTAVEL"],
@@ -80,6 +81,7 @@ type Acumulado = {
   municipioCod: string;
   zona: string;
   secao: string;
+  turno: number;
   votos: Record<string, number>;
   dataBu: string;
 };
@@ -102,7 +104,10 @@ function finalizarAcumulado(a: Acumulado, ano: number, fonteUrl: string): BuNorm
     zona: a.zona,
     secao: a.secao,
     ano,
-    hashBu: createHash("sha256").update(`${a.uf}-${a.zona}-${a.secao}-${JSON.stringify(a.votos)}`).digest("hex"),
+    turno: a.turno,
+    hashBu: createHash("sha256")
+      .update(`${a.uf}-${a.zona}-${a.secao}-${a.turno}-${JSON.stringify(a.votos)}`)
+      .digest("hex"),
     dataBu: converterDataBu(a.dataBu),
     votos: a.votos,
     totalVotos,
@@ -148,7 +153,8 @@ export function criarProcessadorCsvBu(fonteUrl: string, ano: number) {
     const uf = (campos[idx.uf] ?? "").toUpperCase();
     const zona = campos[idx.zona] ?? "";
     const secao = campos[idx.secao] ?? "";
-    const chave = `${uf}|${zona}|${secao}`;
+    const turno = Number(campos[idx.turno] ?? "1") || 1;
+    const chave = `${uf}|${zona}|${secao}|${turno}`;
 
     if (!porSecao.has(chave)) {
       porSecao.set(chave, {
@@ -157,6 +163,7 @@ export function criarProcessadorCsvBu(fonteUrl: string, ano: number) {
         municipioCod: campos[idx.municipioCod] ?? "",
         zona,
         secao,
+        turno,
         votos: {},
         dataBu: `${campos[idx.dataGeracao] ?? ""} ${campos[idx.horaGeracao] ?? ""}`.trim(),
       });

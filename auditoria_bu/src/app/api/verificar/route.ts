@@ -8,6 +8,7 @@ const corpo = z.object({
   zona: z.string().min(1).max(10),
   secao: z.string().min(1).max(10),
   ano: z.number().int(),
+  turno: z.number().int().min(1).max(2),
 });
 
 // "Conferi meu BU físico e bate com o digital" — único contador público do
@@ -23,10 +24,10 @@ export async function POST(req: Request) {
   if (!dados.success) {
     return Response.json({ erro: "Dados inválidos." }, { status: 400 });
   }
-  const { uf, zona, secao, ano } = dados.data;
+  const { uf, zona, secao, ano, turno } = dados.data;
 
   const bu = await prisma.buDigital.findUnique({
-    where: { uf_zona_secao_ano: { uf: uf.toUpperCase(), zona, secao, ano } },
+    where: { uf_zona_secao_ano_turno: { uf: uf.toUpperCase(), zona, secao, ano, turno } },
   });
   if (!bu) {
     return Response.json({ erro: "BU não encontrado." }, { status: 404 });

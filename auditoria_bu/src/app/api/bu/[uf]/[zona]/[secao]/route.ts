@@ -9,14 +9,24 @@ export async function GET(
 ) {
   const { searchParams } = new URL(req.url);
   const ano = Number(searchParams.get("ano") ?? new Date().getFullYear());
+  const turnoParam = searchParams.get("turno");
   const uf = params.uf.toUpperCase();
 
-  const bu = await prisma.buDigital.findUnique({
-    where: { uf_zona_secao_ano: { uf, zona: params.zona, secao: params.secao, ano } },
-  });
+  // Sem turno explícito na URL: mostra o mais recente que existir pra essa
+  // seção (2º turno, quando houver, senão 1º) — é o resultado mais atual.
+  const bu = turnoParam
+    ? await prisma.buDigital.findUnique({
+        where: {
+          uf_zona_secao_ano_turno: { uf, zona: params.zona, secao: params.secao, ano, turno: Number(turnoParam) },
+        },
+      })
+    : await prisma.buDigital.findFirst({
+        where: { uf, zona: params.zona, secao: params.secao, ano },
+        orderBy: { turno: "desc" },
+      });
 
   if (!bu) {
-    return Response.json({ erro: "BU não encontrado para essa seção/ano." }, { status: 404 });
+    return Response.json({ erro: "BU não encontrado para essa seção/ano/turno." }, { status: 404 });
   }
 
   const confirmacoes = await prisma.verificacao.count({ where: { buDigitalId: bu.id } });
@@ -27,6 +37,7 @@ export async function GET(
     zona: bu.zona,
     secao: bu.secao,
     ano: bu.ano,
+    turno: bu.turno,
     hashBu: bu.hashBu,
     dataBu: bu.dataBu,
     votos: bu.votos,

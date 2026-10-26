@@ -30,11 +30,12 @@ model BuDigital {
   totalVotos   Int
   fonteUrl     String // link direto pro arquivo .bu/.json de origem no TSE
   ano          Int // 2022, 2024, 2026...
+  turno        Int // 1 ou 2 — mesma zona/seção/ano tem um BU DIFERENTE por turno
   createdAt    DateTime @default(now())
 
   verificacoes Verificacao[]
 
-  @@unique([uf, zona, secao, ano])
+  @@unique([uf, zona, secao, ano, turno])
   @@index([uf, municipio])
 }
 
@@ -50,13 +51,14 @@ model ApuracaoOficial {
   uf        String @default("")
   municipio String @default("")
   ano       Int
+  turno      Int
   candidato  String
   legenda    String
   totalVotos Int
   updatedAt  DateTime @updatedAt
 
-  @@unique([nivel, uf, municipio, ano, candidato])
-  @@index([nivel, uf, ano])
+  @@unique([nivel, uf, municipio, ano, turno, candidato])
+  @@index([nivel, uf, ano, turno])
 }
 
 // Confirmação pública: "conferi meu BU físico e bate com o digital".
@@ -85,6 +87,7 @@ model RelatoDivergencia {
   zona        String
   secao       String
   ano         Int
+  turno       Int
   status      String   @default("PENDENTE") // PENDENTE | CONFIRMADA | REJEITADA
   // URL de uma foto do BU físico anexada como evidência (armazenamento
   // privado, nunca público — ver README sobre LGPD e retenção).

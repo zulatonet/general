@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 type BuDigital = {
   uf: string;
@@ -8,6 +10,7 @@ type BuDigital = {
   zona: string;
   secao: string;
   ano: number;
+  turno: number;
   hashBu: string;
   dataBu: string;
   votos: Record<string, number>;
@@ -22,21 +25,28 @@ export default function PaginaSecao({
   params: { uf: string; zona: string; secao: string };
 }) {
   const ano = new Date().getFullYear();
+  const searchParams = useSearchParams();
+  const turnoForcado = searchParams.get("turno"); // null = deixa o servidor escolher o mais recente
   const [bu, setBu] = useState<BuDigital | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [mensagem, setMensagem] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/bu/${params.uf}/${params.zona}/${params.secao}?ano=${ano}`)
+    setBu(null);
+    setErro(null);
+    const qs = new URLSearchParams({ ano: String(ano) });
+    if (turnoForcado) qs.set("turno", turnoForcado);
+    fetch(`/api/bu/${params.uf}/${params.zona}/${params.secao}?${qs}`)
       .then((r) => r.json())
       .then((d) => (d.erro ? setErro(d.erro) : setBu(d)));
-  }, [params.uf, params.zona, params.secao, ano]);
+  }, [params.uf, params.zona, params.secao, ano, turnoForcado]);
 
   async function confirmar() {
+    if (!bu) return;
     const r = await fetch("/api/verificar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uf: params.uf, zona: params.zona, secao: params.secao, ano }),
+      body: JSON.stringify({ uf: params.uf, zona: params.zona, secao: params.secao, ano, turno: bu.turno }),
     });
     const d = await r.json();
     if (d.ok) {
@@ -48,10 +58,11 @@ export default function PaginaSecao({
   }
 
   async function relatarDivergencia() {
+    if (!bu) return;
     const r = await fetch("/api/relato", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uf: params.uf, zona: params.zona, secao: params.secao, ano }),
+      body: JSON.stringify({ uf: params.uf, zona: params.zona, secao: params.secao, ano, turno: bu.turno }),
     });
     const d = await r.json();
     setMensagem(d.mensagem ?? d.erro);
@@ -77,6 +88,16 @@ export default function PaginaSecao({
       <h1 className="text-xl font-bold">
         {bu.uf} · {bu.municipio} · Zona {bu.zona} · Seção {bu.secao} · {bu.ano}
       </h1>
+
+      <div className="mt-2 flex items-center gap-2 text-sm">
+        <span className="rounded bg-black px-2 py-0.5 text-white">{bu.turno}º turno</span>
+        <Link href={`?turno=1`} className="text-blue-700 underline">
+          ver 1º turno
+        </Link>
+        <Link href={`?turno=2`} className="text-blue-700 underline">
+          ver 2º turno
+        </Link>
+      </div>
 
       <p className="mt-4 rounded bg-yellow-50 p-3 text-sm text-yellow-900">
         Compare os números abaixo com a cópia física do Boletim de Urna

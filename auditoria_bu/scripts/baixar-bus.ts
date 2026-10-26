@@ -18,10 +18,14 @@
  *     Se não bater, ele já lança erro dizendo qual coluna faltou.
  *
  * Uso:
- *   npm run coletar -- 2022          (todas as UFs)
+ *   npm run coletar -- 2022          (todas as UFs, 1º turno)
  *   npm run coletar -- 2022 SP       (só uma UF, pra testar antes de
  *                                      soltar pra todas — estados grandes
  *                                      passam de vários GB descompactados)
+ *   npm run coletar -- 2026 MG 2     (UF + turno — o 2º turno só existe
+ *                                      pras UFs que tiveram 2º turno de
+ *                                      Presidente/Governador)
+ *   npm run coletar -- 2026 2        (todas as UFs, só o 2º turno)
  */
 import { prisma } from "../src/lib/prisma";
 import { criarProcessadorCsvBu } from "../src/lib/parser-bu-csv";
@@ -45,18 +49,20 @@ async function listarRecursos(ano: number): Promise<RecursoCkan[]> {
   return (dados.result.resources ?? []) as RecursoCkan[];
 }
 
-function recursoEhDaUf(recurso: RecursoCkan, uf: string): boolean {
-  // Os nomes são tipo "SE - Boletim de Urna - Primeiro turno - 05.10.2022".
-  // Pega só o 1º turno por padrão (o 2º turno só existe se houve 2º turno
-  // de Presidente; dá pra estender depois se for preciso).
+function recursoEhDaUf(recurso: RecursoCkan, uf: string, turno: number): boolean {
+  // Os nomes são tipo "SE - Boletim de Urna - Primeiro turno - 05.10.2022"
+  // ou "... Segundo turno - ...".
   const sigla = recurso.name.trim().slice(0, 2).toUpperCase();
-  return sigla === uf && /boletim de urna/i.test(recurso.name) && /primeiro turno/i.test(recurso.name);
+  const nomeTurno = turno === 2 ? "segundo turno" : "primeiro turno";
+  return sigla === uf && /boletim de urna/i.test(recurso.name) && new RegExp(nomeTurno, "i").test(recurso.name);
 }
 
-async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {
-  const recurso = recursos.find((r) => recursoEhDaUf(r, uf));
+async function processarUf(uf: string, ano: number, turno: number, recursos: RecursoCkan[]) {
+  const recurso = recursos.find((r) => recursoEhDaUf(r, uf, turno));
   if (!recurso) {
-    console.log(`  ${uf}: nenhum recurso encontrado (nome pode ter mudado — confira manualmente).`);
+    console.log(
+      `  ${uf}: nenhum recurso de ${turno}º turno encontrado (pode não ter havido ${turno}º turno nessa UF, ou o nome mudou).`
+    );
     return;
   }
 
@@ -88,7 +94,9 @@ async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {
     await prisma.$transaction(
       lote.map((bu) =>
         prisma.buDigital.upsert({
-          where: { uf_zona_secao_ano: { uf: bu.uf, zona: bu.zona, secao: bu.secao, ano: bu.ano } },
+          where: {
+            uf_zona_secao_ano_turno: { uf: bu.uf, zona: bu.zona, secao: bu.secao, ano: bu.ano, turno: bu.turno },
+          },
           create: { ...bu, dataBu: new Date(bu.dataBu) },
           update: { votos: bu.votos, totalVotos: bu.totalVotos, hashBu: bu.hashBu },
         })
@@ -101,18 +109,25 @@ async function processarUf(uf: string, ano: number, recursos: RecursoCkan[]) {
 
 async function main() {
   const ano = Number(process.argv[2] ?? new Date().getFullYear());
-  const ufUnica = process.argv[3]?.toUpperCase();
-  console.log(`Coletando BUs de ${ano}${ufUnica ? ` (só ${ufUnica})` : ""}...`);
+  // O 3º argumento pode ser a UF (ex.: "MG") ou, se você quiser todas as
+  // UFs mas num turno específico, direto o turno ("1"/"2") no lugar dela:
+  // `npm run coletar -- 2026 2` = todas as UFs, 2º turno.
+  const arg3 = process.argv[3]?.toUpperCase();
+  const arg3EhTurno = arg3 === "1" || arg3 === "2";
+  const ufUnica = arg3EhTurno ? undefined : arg3;
+  const turno = Number(arg3EhTurno ? arg3 : (process.argv[4] ?? "1"));
+  if (turno !== 1 && turno !== 2) throw new Error("turno precisa ser 1 ou 2");
+  console.log(`Coletando BUs de ${ano}, ${turno}º turno${ufUnica ? ` (só ${ufUnica})` : ""}...`);
 
   const recursos = await listarRecursos(ano);
   console.log(`${recursos.length} recursos encontrados no pacote.`);
 
   if (ufUnica) {
     if (!UFS.includes(ufUnica)) throw new Error(`UF inválida: ${ufUnica}`);
-    await processarUf(ufUnica, ano, recursos);
+    await processarUf(ufUnica, ano, turno, recursos);
   } else {
     for (const uf of UFS) {
-      await processarUf(uf, ano, recursos);
+      await processarUf(uf, ano, turno, recursos);
     }
   }
 

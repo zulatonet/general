@@ -51,15 +51,23 @@ npm run dev
 
 `scripts/baixar-bus.ts` já é uma implementação real: pergunta pro catálogo
 CKAN de dados abertos do TSE (API pública, sem chave) os recursos do pacote
-`resultados-<ano>-boletim-de-urna`, baixa o recurso "Boletim de Urna -
-Primeiro turno" de cada UF (um `.zip` contendo um `.csv` com uma linha por
+`resultados-<ano>-boletim-de-urna`, baixa o recurso "Boletim de Urna" do
+turno escolhido de cada UF (um `.zip` contendo um `.csv` com uma linha por
 candidato/seção) e filtra só as linhas do cargo Presidente, agrupando por
 seção.
+
+**1º e 2º turno são registros diferentes** (mesma zona/seção/ano, turno
+diferente) — o banco trata isso como chave composta (`uf+zona+seção+ano+
+turno`), nunca sobrescrevendo um pelo outro. Na consulta por seção
+(`/bu/UF/ZONA/SECAO`), se você não especificar o turno na URL
+(`?turno=1` ou `?turno=2`), o site mostra automaticamente o mais recente
+que existir pra aquela seção.
 
 **Antes de rodar a coleta completa**, valide com uma UF de exemplo:
 
 ```bash
-npm run inspecionar:bu -- 2022 SP
+npm run inspecionar:bu -- 2022 SP      # 1º turno (padrão)
+npm run inspecionar:bu -- 2026 MG 2    # 2º turno
 ```
 
 Isso baixa só o recurso de uma UF, mostra a lista de arquivos dentro do
@@ -80,12 +88,17 @@ de 500 seções por transação.
 Depois de confirmar, rode a coleta completa:
 
 ```bash
-npm run coletar -- 2022
-npm run totalizar -- 2022
+npm run coletar -- 2022            # todas as UFs, 1º turno
+npm run totalizar -- 2022          # totaliza o 1º turno
+
+npm run coletar -- 2026 MG 2       # só uma UF, 2º turno (teste antes de soltar pra todas)
+npm run coletar -- 2026 2          # todas as UFs, só o 2º turno
+npm run totalizar -- 2026 2        # totaliza o 2º turno
 ```
 
-Agende os dois via cron: `coletar` a cada 5 min no dia da eleição (ou 1x/dia
-fora do período eleitoral), `totalizar` logo depois de cada coleta.
+Agende via cron: `coletar` a cada 5 min no dia da eleição (ou 1x/dia fora
+do período eleitoral), `totalizar` logo depois de cada coleta — do turno
+que estiver em andamento.
 
 ## Variáveis de ambiente
 

@@ -8,6 +8,7 @@ const corpo = z.object({
   zona: z.string().min(1).max(10),
   secao: z.string().min(1).max(10),
   ano: z.number().int(),
+  turno: z.number().int().min(1).max(2),
 });
 
 // Relato de "algo não bate com o BU físico". Propositalmente SEM campo de
@@ -24,9 +25,9 @@ export async function POST(req: Request) {
   if (!dados.success) {
     return Response.json({ erro: "Dados inválidos." }, { status: 400 });
   }
-  const { uf, zona, secao, ano } = dados.data;
+  const { uf, zona, secao, ano, turno } = dados.data;
 
-  if (limitado(`relato:${fp}:${uf}:${zona}:${secao}`, 1, 24 * 60 * 60_000)) {
+  if (limitado(`relato:${fp}:${uf}:${zona}:${secao}:${turno}`, 1, 24 * 60 * 60_000)) {
     return Response.json(
       { erro: "Você já relatou essa seção nas últimas 24h." },
       { status: 429 }
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
   }
 
   await prisma.relatoDivergencia.create({
-    data: { uf: uf.toUpperCase(), zona, secao, ano, fingerprint: fp },
+    data: { uf: uf.toUpperCase(), zona, secao, ano, turno, fingerprint: fp },
   });
 
   return Response.json({
